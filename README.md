@@ -41,7 +41,7 @@ Artifacts can be found at the following repositories.
 ```
 
 ## Usage
-Configuration of the `ConnectionFactory` can be accomplished in two ways:
+Configuration of the `ConnectionPool` can be accomplished in two ways:
 
 ### Connection Factory Discovery
 ```java
@@ -63,18 +63,37 @@ Mono<Connection> connectionMono = Mono.from(connectionFactory.create());
 
 Supported Connection Factory Discovery options:
 
-| Option | Description
-| ------ | -----------
-| `driver` | Must be `pool`
-| `protocol` | Driver identifier. The value is propagated by the pool to the `driver` property.
+| Option            | Description
+| ------            | -----------
+| `driver`          | Must be `pool`
+| `protocol`        | Driver identifier. The value is propagated by the pool to the `driver` property.
+| `maxSize`         | Maximum pool size. Defaults to `10`.
+| `validationQuery` | Query that will be executed just before a connection is given to you from the pool to validate that the connection to the database is still alive.
 
 All other properties are driver-specific
 
 ### Programmatic
 ```java
-ConnectionFactory connectionFactory = 
+ConnectionFactory connectionFactory = …;
 
-Mono<Connection> connection = connectionFactory.create();
+ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+   .validationQuery("SELECT 1")
+   .maxIdleTime(Duration.ofMillis(1000))
+   .maxSize(20)
+   .build();
+
+ConnectionPool pool = new ConnectionPool(configuration);
+ 
+
+Mono<Connection> connectionMono = pool.create();
+
+// later
+
+Connection connection = …;
+Mono<Void> release = connection.close(); // released the connection back to the pool
+
+// application shutdown
+pool.dispose();
 ```
 
 ## License
