@@ -60,8 +60,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Wrapped<Co
         Assert.requireNonNull(factory, "ConnectionFactory must not be null");
         Assert.requireNonNull(poolBuilderCustomizer, "poolBuilderCustomizer must not be null");
 
-        PoolBuilder<Connection> builder = PoolBuilder.<Connection>from(Mono.from(factory.create()))
-            .destroyHandler(t -> Mono.from(t.close()))
+        PoolBuilder<Connection> builder = PoolBuilder.<Connection>from(factory.create())
+            .destroyHandler(Connection::close)
             .sizeMax(Runtime.getRuntime().availableProcessors());
 
         poolBuilderCustomizer.accept(builder);
