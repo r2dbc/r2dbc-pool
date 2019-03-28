@@ -1,6 +1,6 @@
-# Reactive Relational Database Connectivity Proxy Implementation
+# Reactive Relational Database Connectivity Connection Pool Implementation
 
-This project contains a [R2DBC SPI][r] connection pool using `reactor-pool` for reactive connection pooling.
+This project contains a [R2DBC][r] connection pool using `reactor-pool` for reactive connection pooling.
 
 [r]: https://github.com/r2dbc/r2dbc-spi
 
