@@ -4,8 +4,9 @@ platform: linux
 image_resource:
   type: docker-image
   source:
-    repository: r2dbc/r2dbc-pool
-
+    repository: openjdk
+    tag: 8-jdk
+    
 inputs:
 - name: r2dbc-pool
 - name: r2dbc-spi-artifactory
