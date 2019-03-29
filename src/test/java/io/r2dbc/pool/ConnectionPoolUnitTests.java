@@ -25,6 +25,7 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +36,7 @@ import static org.mockito.Mockito.when;
 /**
  * Unit tests for {@link ConnectionPool}.
  */
+@SuppressWarnings("unchecked")
 final class ConnectionPoolUnitTests {
 
     @Test
@@ -42,7 +44,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         ConnectionFactoryMetadata metadata = mock(ConnectionFactoryMetadata.class);
-        when(connectionFactoryMock.create()).thenReturn(Mono.empty());
+        when(connectionFactoryMock.create()).thenReturn((Mono) Mono.just(ConnectionFactory.class));
         when(connectionFactoryMock.getMetadata()).thenReturn(metadata);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
@@ -55,7 +57,7 @@ final class ConnectionPoolUnitTests {
     void shouldUnwrapOriginalFactory() {
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
-        when(connectionFactoryMock.create()).thenReturn(Mono.empty());
+        when(connectionFactoryMock.create()).thenReturn((Mono) Mono.just(ConnectionFactory.class));
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
         ConnectionPool pool = new ConnectionPool(configuration);
@@ -86,6 +88,30 @@ final class ConnectionPoolUnitTests {
 
     @Test
     @SuppressWarnings("unchecked")
+    void shouldConsiderInitialSize() {
+
+        AtomicInteger creations = new AtomicInteger();
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+        when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnNext(it -> creations.incrementAndGet()));
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        pool.create().as(StepVerifier::create).consumeNextWith(actual -> {
+
+            assertThat(actual).isInstanceOf(PooledConnection.class);
+            assertThat(((Wrapped) actual).unwrap()).isSameAs(connectionMock);
+
+        }).verifyComplete();
+
+        verify(connectionFactoryMock).create();
+        assertThat(creations).hasValue(10);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void shouldReusePooledConnection() {
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
@@ -93,7 +119,7 @@ final class ConnectionPoolUnitTests {
         AtomicLong createCounter = new AtomicLong();
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnSubscribe(ignore -> createCounter.incrementAndGet()));
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         pool.create().as(StepVerifier::create).assertNext(actual -> {
@@ -117,7 +143,7 @@ final class ConnectionPoolUnitTests {
         AtomicLong createCounter = new AtomicLong();
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnSubscribe(ignore -> createCounter.incrementAndGet()));
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         pool.create().as(StepVerifier::create).expectNextCount(1).verifyComplete();

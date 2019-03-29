@@ -37,13 +37,16 @@ public final class ConnectionPoolConfiguration {
 
     private final Duration maxIdleTime;
 
+    private final int initialSize;
+
     private final int maxSize;
 
     @Nullable
     private final String validationQuery;
 
-    private ConnectionPoolConfiguration(ConnectionFactory connectionFactory, Duration maxIdleTime, int maxSize, @Nullable String validationQuery) {
+    private ConnectionPoolConfiguration(ConnectionFactory connectionFactory, Duration maxIdleTime, int initialSize, int maxSize, @Nullable String validationQuery) {
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
+        this.initialSize = initialSize;
         this.maxSize = maxSize;
         this.maxIdleTime = maxIdleTime;
         this.validationQuery = validationQuery;
@@ -67,6 +70,11 @@ public final class ConnectionPoolConfiguration {
         return maxIdleTime;
     }
 
+
+    public int getInitialSize() {
+        return initialSize;
+    }
+
     int getMaxSize() {
         return maxSize;
     }
@@ -78,6 +86,8 @@ public final class ConnectionPoolConfiguration {
 
     Consumer<PoolBuilder<Connection>> getCustomizer() {
         return builder -> {
+
+            builder.initialSize(getInitialSize());
 
             if (getMaxSize() == -1) {
                 builder.sizeUnbounded();
@@ -105,6 +115,8 @@ public final class ConnectionPoolConfiguration {
 
         private final ConnectionFactory connectionFactory;
 
+        private int initialSize = 10;
+
         private int maxSize = 10;
 
         private Duration maxIdleTime = Duration.ofMinutes(30);
@@ -114,6 +126,21 @@ public final class ConnectionPoolConfiguration {
 
         private Builder(ConnectionFactory connectionFactory) {
             this.connectionFactory = connectionFactory;
+        }
+
+        /**
+         * Configure the initial connection pool size. Defaults to {@code 10}.
+         *
+         * @param initialSize the initial pool size, must be equal or greater than zero.
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code maxSize} is negative or zero.
+         */
+        public Builder initialSize(int initialSize) {
+            if (initialSize < 0) {
+                throw new IllegalArgumentException("Initial pool size must be equal greater zero");
+            }
+            this.initialSize = initialSize;
+            return this;
         }
 
         /**
@@ -165,7 +192,7 @@ public final class ConnectionPoolConfiguration {
          * @return a configured {@link ConnectionPoolConfiguration}
          */
         public ConnectionPoolConfiguration build() {
-            return new ConnectionPoolConfiguration(this.connectionFactory, this.maxIdleTime, this.maxSize, this.validationQuery);
+            return new ConnectionPoolConfiguration(this.connectionFactory, this.maxIdleTime, this.initialSize, this.maxSize, this.validationQuery);
         }
 
         @Override
@@ -173,6 +200,7 @@ public final class ConnectionPoolConfiguration {
             return "Builder{" +
                 "connectionFactory='" + this.connectionFactory + '\'' +
                 ", maxIdleTime='" + this.maxIdleTime + '\'' +
+                ", initialSize='" + this.initialSize + '\'' +
                 ", maxSize='" + this.maxSize + '\'' +
                 ", validationQuery='" + this.validationQuery + '\'' +
                 '}';

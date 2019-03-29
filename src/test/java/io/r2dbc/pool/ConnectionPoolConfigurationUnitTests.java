@@ -38,6 +38,7 @@ final class ConnectionPoolConfigurationUnitTests {
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
             .validationQuery("foo")
             .maxIdleTime(Duration.ofMillis(1000))
+            .initialSize(2)
             .maxSize(20)
             .build();
 
@@ -45,6 +46,7 @@ final class ConnectionPoolConfigurationUnitTests {
             .hasFieldOrPropertyWithValue("connectionFactory", connectionFactoryMock)
             .hasFieldOrPropertyWithValue("validationQuery", "foo")
             .hasFieldOrPropertyWithValue("maxIdleTime", Duration.ofMillis(1000))
+            .hasFieldOrPropertyWithValue("initialSize", 2)
             .hasFieldOrPropertyWithValue("maxSize", 20);
     }
 
@@ -57,6 +59,7 @@ final class ConnectionPoolConfigurationUnitTests {
             .hasFieldOrPropertyWithValue("connectionFactory", connectionFactoryMock)
             .hasFieldOrPropertyWithValue("validationQuery", null)
             .hasFieldOrPropertyWithValue("maxIdleTime", Duration.ofMinutes(30))
+            .hasFieldOrPropertyWithValue("initialSize", 10)
             .hasFieldOrPropertyWithValue("maxSize", 10);
     }
 
