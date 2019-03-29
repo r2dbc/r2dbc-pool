@@ -26,13 +26,14 @@ import reactor.pool.Pool;
 import reactor.pool.PoolBuilder;
 import reactor.pool.PooledRef;
 
+import java.io.Closeable;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
  * Reactive Relational Database Connection Pool implementation.
  */
-public class ConnectionPool implements ConnectionFactory, Disposable, Wrapped<ConnectionFactory> {
+public class ConnectionPool implements ConnectionFactory, Disposable, Closeable, Wrapped<ConnectionFactory> {
 
     private final ConnectionFactory factory;
 
@@ -83,6 +84,11 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Wrapped<Co
                 }
             });
         });
+    }
+
+    @Override
+    public void close() {
+        dispose();
     }
 
     @Override
