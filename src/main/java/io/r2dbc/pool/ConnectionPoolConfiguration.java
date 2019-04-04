@@ -18,18 +18,17 @@ package io.r2dbc.pool;
 
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
-import reactor.core.publisher.Flux;
 import reactor.pool.PoolBuilder;
 import reactor.util.annotation.Nullable;
 
 import java.time.Duration;
-import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
  * Connection pool configuration.
  *
  * @author Mark Paluch
+ * @author Tadaya Tsuyukubo
  */
 public final class ConnectionPoolConfiguration {
 
@@ -39,17 +38,28 @@ public final class ConnectionPoolConfiguration {
 
     private final int initialSize;
 
+    private final Duration maxCreateConnectionTime;
+
+    private final Duration maxAcquireTime;
+
     private final int maxSize;
 
     @Nullable
     private final String validationQuery;
 
-    private ConnectionPoolConfiguration(ConnectionFactory connectionFactory, Duration maxIdleTime, int initialSize, int maxSize, @Nullable String validationQuery) {
+    private final Consumer<PoolBuilder<Connection>> customizer;
+
+    private ConnectionPoolConfiguration(ConnectionFactory connectionFactory, Duration maxIdleTime,
+                                        int initialSize, int maxSize, @Nullable String validationQuery, Duration maxCreateConnectionTime,
+                                        Duration maxAcquireTime, Consumer<PoolBuilder<Connection>> customizer) {
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.initialSize = initialSize;
         this.maxSize = maxSize;
         this.maxIdleTime = maxIdleTime;
         this.validationQuery = validationQuery;
+        this.maxCreateConnectionTime = maxCreateConnectionTime;
+        this.maxAcquireTime = maxAcquireTime;
+        this.customizer = customizer;
     }
 
     /**
@@ -84,26 +94,16 @@ public final class ConnectionPoolConfiguration {
         return validationQuery;
     }
 
+    Duration getMaxCreateConnectionTime() {
+        return this.maxCreateConnectionTime;
+    }
+
+    Duration getMaxAcquireTime() {
+        return this.maxAcquireTime;
+    }
+
     Consumer<PoolBuilder<Connection>> getCustomizer() {
-        return builder -> {
-
-            builder.initialSize(getInitialSize());
-
-            if (getMaxSize() == -1) {
-                builder.sizeUnbounded();
-            } else {
-                builder.sizeMax(getMaxSize());
-            }
-
-            String validationQuery = getValidationQuery();
-            if (validationQuery != null) {
-                builder.releaseHandler(connection -> {
-                    return Flux.from(connection.createStatement(validationQuery).execute()).flatMap(it -> it.map((row, rowMetadata) -> Optional.ofNullable(row.get(0)))).then();
-                });
-            }
-
-            builder.evictionIdle(getMaxIdleTime());
-        };
+        return this.customizer;
     }
 
     /**
@@ -120,6 +120,12 @@ public final class ConnectionPoolConfiguration {
         private int maxSize = 10;
 
         private Duration maxIdleTime = Duration.ofMinutes(30);
+
+        private Duration maxCreateConnectionTime = Duration.ZERO;  // ZERO indicates no-timeout
+
+        private Duration maxAcquireTime = Duration.ZERO;  // ZERO indicates no-timeout
+
+        private Consumer<PoolBuilder<Connection>> customizer = poolBuilder -> {};  // no-op
 
         @Nullable
         private String validationQuery;
@@ -163,7 +169,7 @@ public final class ConnectionPoolConfiguration {
          *
          * @param maxIdleTime the maximum idle time, must not be {@code null} and must not be negative. {@link Duration#ZERO} means no idle timeout.
          * @return this {@link Builder}
-         * @throws IllegalArgumentException if {@code validationQuery} is {@code null}
+         * @throws IllegalArgumentException if {@code maxIdleTime} is {@code null} or negative value.
          */
         public Builder maxIdleTime(Duration maxIdleTime) {
             Assert.requireNonNull(maxIdleTime, "MaxIdleTime must not be null");
@@ -171,6 +177,43 @@ public final class ConnectionPoolConfiguration {
                 throw new IllegalArgumentException("MaxIdleTime must not be negative");
             }
             this.maxIdleTime = maxIdleTime;
+            return this;
+        }
+
+        /**
+         * Configure {@link Duration timeout} for creating a new {@link Connection} from {@link ConnectionFactory}. Default is no timeout.
+         *
+         * @param maxCreateConnectionTime the maximum time to create a new {@link Connection} from {@link ConnectionFactory}, must not be {@code null} and must not be negative.
+         *                                {@link Duration#ZERO} indicates no timeout.
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code maxCreateConnectionTime} is {@code null} or negative.
+         */
+        public Builder maxCreateConnectionTime(Duration maxCreateConnectionTime) {
+            Assert.requireNonNull(maxCreateConnectionTime, "maxCreateConnectionTime must not be null");
+            if (maxCreateConnectionTime.isNegative()) {
+                throw new IllegalArgumentException("maxCreateConnectionTime must not be negative");
+            }
+            this.maxCreateConnectionTime = maxCreateConnectionTime;
+            return this;
+        }
+
+        /**
+         * Configure {@link Duration timeout} for acquiring a {@link Connection} from pool. Default is no timeout.
+         *
+         * When acquiring a {@link Connection} requires obtaining a new {@link Connection} from underlying {@link ConnectionFactory}, this timeout
+         * also applies to get the new one.
+         *
+         * @param maxAcquireTime the maximum time to acquire connection from pool, must not be {@code null} and must not be negative.
+         *                       {@link Duration#ZERO} indicates no timeout.
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code maxAcquireTime} is negative.
+         */
+        public Builder maxAcquireTime(Duration maxAcquireTime) {
+            Assert.requireNonNull(maxAcquireTime, "maxAcquireTime must not be null");
+            if (maxAcquireTime.isNegative()) {
+                throw new IllegalArgumentException("maxAcquireTime must not be negative");
+            }
+            this.maxAcquireTime = maxAcquireTime;
             return this;
         }
 
@@ -187,12 +230,25 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
+         * Configure a customizer for {@link PoolBuilder} that constructs the {@link Connection} pool.
+         *
+         * @param customizer customizer for {@link PoolBuilder} that creates the {@link Connection} pool, must not be {@code null}.
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code customizer} is {@code null}
+         */
+        public Builder customizer(Consumer<PoolBuilder<Connection>> customizer) {
+            this.customizer = Assert.requireNonNull(customizer, "PoolBuilder customizer must not be null");
+            return this;
+        }
+
+        /**
          * Returns a configured {@link ConnectionPoolConfiguration}.
          *
          * @return a configured {@link ConnectionPoolConfiguration}
          */
         public ConnectionPoolConfiguration build() {
-            return new ConnectionPoolConfiguration(this.connectionFactory, this.maxIdleTime, this.initialSize, this.maxSize, this.validationQuery);
+            return new ConnectionPoolConfiguration(this.connectionFactory, this.maxIdleTime,
+                    this.initialSize, this.maxSize, this.validationQuery, this.maxCreateConnectionTime, this.maxAcquireTime, this.customizer);
         }
 
         @Override
@@ -203,6 +259,8 @@ public final class ConnectionPoolConfiguration {
                 ", initialSize='" + this.initialSize + '\'' +
                 ", maxSize='" + this.maxSize + '\'' +
                 ", validationQuery='" + this.validationQuery + '\'' +
+                ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +
+                ", maxAcquireTime='" + this.maxAcquireTime + '\'' +
                 '}';
         }
     }
