@@ -29,6 +29,8 @@ import reactor.pool.PooledRef;
  * Pooled {@link Connection} implementation. Performs a cleanup on {@link #close()} if used transactionally.
  * <p>
  * TODO: Initially, connections are assumed to work in auto-commit mode. Do we need to inspect auto-commit and restore the auto-commit state?
+ *
+ * @author Mark Paluch
  */
 final class PooledConnection implements Connection, Wrapped<Connection> {
 

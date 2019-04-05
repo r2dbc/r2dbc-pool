@@ -21,17 +21,23 @@ import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
 import io.r2dbc.spi.Wrapped;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.pool.Pool;
 import reactor.pool.PoolBuilder;
 import reactor.pool.PooledRef;
 
 import java.io.Closeable;
+import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
  * Reactive Relational Database Connection Pool implementation.
+ *
+ * @author Mark Paluch
+ * @author Tadaya Tsuyukubo
  */
 public class ConnectionPool implements ConnectionFactory, Disposable, Closeable, Wrapped<ConnectionFactory> {
 
@@ -39,36 +45,59 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     private final Pool<Connection> connectionPool;
 
+    private final Duration maxAcquireTime;
+
     /**
      * Creates a new connection factory.
      *
-     * @param configuration the configuration to use connections
+     * @param configuration the configuration to use for building the connection pool.
      * @throws IllegalArgumentException if {@code configuration} is {@code null}
      */
     public ConnectionPool(ConnectionPoolConfiguration configuration) {
-        this(Assert.requireNonNull(configuration.getConnectionFactory(), "ConnectionPoolConfiguration must not be null"), configuration.getCustomizer());
+        this.connectionPool = createConnectionPool(Assert.requireNonNull(configuration, "ConnectionPoolConfiguration must not be null"));
+        this.factory = configuration.getConnectionFactory();
+        this.maxAcquireTime = configuration.getMaxAcquireTime();
     }
 
-    /**
-     * Creates a new connection factory.
-     *
-     * @param factory               the {@link ConnectionFactory} that creates actual database connections
-     * @param poolBuilderCustomizer {@link Consumer customizer} for the {@link PoolBuilder pool builder}.
-     * @throws IllegalArgumentException if {@code factory} or {@code poolBuilderCustomizer} is {@code null}
-     */
-    public ConnectionPool(ConnectionFactory factory, Consumer<PoolBuilder<Connection>> poolBuilderCustomizer) {
+    private Pool<Connection> createConnectionPool(ConnectionPoolConfiguration configuration) {
 
-        Assert.requireNonNull(factory, "ConnectionFactory must not be null");
-        Assert.requireNonNull(poolBuilderCustomizer, "poolBuilderCustomizer must not be null");
+        ConnectionFactory factory = configuration.getConnectionFactory();
+        Duration maxCreateConnectionTime = configuration.getMaxCreateConnectionTime();
+        int initialSize = configuration.getInitialSize();
+        int maxSize = configuration.getMaxSize();
+        String validationQuery = configuration.getValidationQuery();
+        Duration maxIdleTime = configuration.getMaxIdleTime();
+        Consumer<PoolBuilder<Connection>> customizer = configuration.getCustomizer();
 
-        PoolBuilder<Connection> builder = PoolBuilder.<Connection>from(factory.create())
+        // set timeout for create connection
+        Mono<Connection> allocator = Mono.from(factory.create());
+        if (!maxCreateConnectionTime.isZero()) {
+            allocator = allocator.timeout(maxCreateConnectionTime);
+        }
+
+        PoolBuilder<Connection> builder = PoolBuilder.from(allocator)
             .destroyHandler(Connection::close)
             .sizeMax(Runtime.getRuntime().availableProcessors());
 
-        poolBuilderCustomizer.accept(builder);
+        builder.initialSize(initialSize);
 
-        this.factory = factory;
-        this.connectionPool = builder.build();
+        if (maxSize == -1) {
+            builder.sizeUnbounded();
+        } else {
+            builder.sizeMax(maxSize);
+        }
+
+        if (validationQuery != null) {
+            builder.releaseHandler(connection -> {
+                return Flux.from(connection.createStatement(validationQuery).execute()).flatMap(it -> it.map((row, rowMetadata) -> Optional.ofNullable(row.get(0)))).then();
+            });
+        }
+
+        builder.evictionIdle(maxIdleTime);
+
+        customizer.accept(builder);
+
+        return builder.build();
     }
 
     @Override
@@ -76,13 +105,22 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         return Mono.defer(() -> {
 
             AtomicReference<PooledRef<Connection>> emitted = new AtomicReference<>();
-            return connectionPool.acquire().doOnNext(emitted::set).map(PooledConnection::new).doOnCancel(() -> {
 
-                PooledRef<Connection> ref = emitted.get();
-                if (ref != null && emitted.compareAndSet(ref, null)) {
-                    ref.release().subscribe();
-                }
-            });
+            Mono<PooledConnection> mono = connectionPool.acquire()
+                .doOnNext(emitted::set)
+                .map(PooledConnection::new)
+                .doOnCancel(() -> {
+
+                    PooledRef<Connection> ref = emitted.get();
+                    if (ref != null && emitted.compareAndSet(ref, null)) {
+                        ref.release().subscribe();
+                    }
+                });
+
+            if (!this.maxAcquireTime.isZero()) {
+                mono = mono.timeout(this.maxAcquireTime);
+            }
+            return mono;
         });
     }
 
