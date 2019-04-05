@@ -32,6 +32,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link ConnectionFactory} discovery.
+ *
+ * @author Mark Paluch
  */
 final class DiscoveryUnitTests {
 

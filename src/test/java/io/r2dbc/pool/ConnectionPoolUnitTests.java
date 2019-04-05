@@ -25,9 +25,9 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import java.util.concurrent.atomic.AtomicInteger;
 import java.time.Duration;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -38,6 +38,9 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link ConnectionPool}.
+ *
+ * @author Mark Paluch
+ * @author Tadaya Tsuyukubo
  */
 @SuppressWarnings("unchecked")
 final class ConnectionPoolUnitTests {
@@ -115,6 +118,30 @@ final class ConnectionPoolUnitTests {
 
     @Test
     @SuppressWarnings("unchecked")
+    void shouldConsiderCustomizer() {
+
+        AtomicInteger creations = new AtomicInteger();
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+        when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnNext(it -> creations.incrementAndGet()));
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).customizer(connectionPoolBuilder -> connectionPoolBuilder.initialSize(2)).build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        pool.create().as(StepVerifier::create).consumeNextWith(actual -> {
+
+            assertThat(actual).isInstanceOf(PooledConnection.class);
+            assertThat(((Wrapped) actual).unwrap()).isSameAs(connectionMock);
+
+        }).verifyComplete();
+
+        verify(connectionFactoryMock).create();
+        assertThat(creations).hasValue(2);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void shouldReusePooledConnection() {
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
@@ -163,20 +190,21 @@ final class ConnectionPoolUnitTests {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.defer(() ->
-                Mono.delay(Duration.ofMillis(100)).thenReturn(connectionMock))
+            Mono.delay(Duration.ofDays(1)).thenReturn(connectionMock))
         );
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
-                .initialSize(0)
-                .maxCreateConnectionTime(Duration.ofMillis(10))
-                .build();
+            .initialSize(0)
+            .maxCreateConnectionTime(Duration.ofMinutes(10))
+            .build();
+
         ConnectionPool pool = new ConnectionPool(configuration);
 
-
-        pool.create().as(StepVerifier::create)
-                .expectSubscription()
-                .expectError(TimeoutException.class)
-                .verify();
+        StepVerifier.withVirtualTime(pool::create)
+            .expectSubscription()
+            .thenAwait(Duration.ofMinutes(11))
+            .expectError(TimeoutException.class)
+            .verify();
 
         verify(connectionFactoryMock).create();
     }
@@ -190,18 +218,20 @@ final class ConnectionPoolUnitTests {
 
         // acquire time should also consider the time to obtain an actual connection
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.defer(() ->
-                Mono.delay(Duration.ofMillis(100)).thenReturn(connectionMock))
+            Mono.delay(Duration.ofDays(1)).thenReturn(connectionMock))
         );
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
-                .initialSize(0)
-                .maxAcquireTime(Duration.ofMillis(10))
-                .build();
+            .initialSize(0)
+            .maxAcquireTime(Duration.ofMinutes(10))
+            .build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
-        pool.create().as(StepVerifier::create)
-                .expectError(TimeoutException.class)
-                .verify();
+        StepVerifier.withVirtualTime(pool::create)
+            .expectSubscription()
+            .thenAwait(Duration.ofMinutes(11))
+            .expectError(TimeoutException.class)
+            .verify();
 
         verify(connectionFactoryMock).create();
     }
@@ -214,13 +244,13 @@ final class ConnectionPoolUnitTests {
         Connection connectionMock = mock(Connection.class);
 
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.defer(() ->
-                Mono.delay(Duration.ofMillis(100)).thenReturn(connectionMock))
+            Mono.delay(Duration.ofMillis(100)).thenReturn(connectionMock))
         );
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
-                .initialSize(1)
-                .maxAcquireTime(Duration.ofMillis(10))
-                .build();
+            .initialSize(1)
+            .maxAcquireTime(Duration.ofMillis(10))
+            .build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         // When initial size of the pool is non-zero, even though creating connection is slow,
@@ -228,8 +258,8 @@ final class ConnectionPoolUnitTests {
         // Therefore, it should not timeout for acquiring a connection from pool.
 
         pool.create().as(StepVerifier::create)
-                .expectNextCount(1)
-                .verifyComplete();
+            .expectNextCount(1)
+            .verifyComplete();
 
         verify(connectionFactoryMock).create();
     }
@@ -252,24 +282,27 @@ final class ConnectionPoolUnitTests {
             return Mono.just(connectionMock);  // fast creation
         });
 
-        when(connectionFactoryMock.create()).thenReturn((Publisher)connectionPublisher);
+        when(connectionFactoryMock.create()).thenReturn((Publisher) connectionPublisher);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
-                .initialSize(0)
-                .maxAcquireTime(Duration.ofMillis(70))
-                .build();
+            .initialSize(0)
+            .maxAcquireTime(Duration.ofMillis(70))
+            .build();
         ConnectionPool pool = new ConnectionPool(configuration);
-
 
         AtomicReference<Connection> firstConnectionHolder = new AtomicReference<>();
 
         // fast connection retrieval, do not close the connection yet, so that next call will create a new connection
-        pool.create().as(StepVerifier::create).consumeNextWith(firstConnectionHolder::set).verifyComplete();
+        pool.create()
+            .as(StepVerifier::create)
+            .consumeNextWith(firstConnectionHolder::set)
+            .verifyComplete();
 
         // slow connection retrieval
-        pool.create().as(StepVerifier::create)
-                .expectError(TimeoutException.class)
-                .verify();
+        pool.create()
+            .as(StepVerifier::create)
+            .expectError(TimeoutException.class)
+            .verify();
 
         assertThat(counter).hasValue(2);
 
@@ -277,9 +310,11 @@ final class ConnectionPoolUnitTests {
         StepVerifier.create(firstConnectionHolder.get().close()).verifyComplete();
 
         // This should retrieve from pool, not fetching from the connection publisher.
-        pool.create().as(StepVerifier::create).assertNext(actual -> {
-            StepVerifier.create(actual.close()).verifyComplete();
-        }).verifyComplete();
+        pool.create()
+            .as(StepVerifier::create)
+            .assertNext(actual -> {
+                StepVerifier.create(actual.close()).verifyComplete();
+            }).verifyComplete();
 
         assertThat(counter).hasValue(2);
     }

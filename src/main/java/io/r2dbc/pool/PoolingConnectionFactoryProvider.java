@@ -28,6 +28,8 @@ import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
 
 /**
  * An implementation of {@link ConnectionFactory} for creating pooled connections to a delegated {@link ConnectionFactory}.
+ *
+ * @author Mark Paluch
  */
 public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvider {
 

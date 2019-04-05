@@ -20,6 +20,8 @@ import reactor.util.annotation.Nullable;
 
 /**
  * Assertion library for the implementation.
+ *
+ * @author Mark Paluch
  */
 final class Assert {
 

@@ -35,6 +35,9 @@ import java.util.function.Consumer;
 
 /**
  * Reactive Relational Database Connection Pool implementation.
+ *
+ * @author Mark Paluch
+ * @author Tadaya Tsuyukubo
  */
 public class ConnectionPool implements ConnectionFactory, Disposable, Closeable, Wrapped<ConnectionFactory> {
 
@@ -51,9 +54,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
      * @throws IllegalArgumentException if {@code configuration} is {@code null}
      */
     public ConnectionPool(ConnectionPoolConfiguration configuration) {
-        Assert.requireNonNull(configuration, "ConnectionPoolConfiguration must not be null");
-
-        this.connectionPool = createConnectionPool(configuration);
+        this.connectionPool = createConnectionPool(Assert.requireNonNull(configuration, "ConnectionPoolConfiguration must not be null"));
         this.factory = configuration.getConnectionFactory();
         this.maxAcquireTime = configuration.getMaxAcquireTime();
     }
@@ -75,9 +76,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         }
 
         PoolBuilder<Connection> builder = PoolBuilder.from(allocator)
-                .destroyHandler(Connection::close)
-                .sizeMax(Runtime.getRuntime().availableProcessors());
-
+            .destroyHandler(Connection::close)
+            .sizeMax(Runtime.getRuntime().availableProcessors());
 
         builder.initialSize(initialSize);
 
@@ -107,15 +107,15 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             AtomicReference<PooledRef<Connection>> emitted = new AtomicReference<>();
 
             Mono<PooledConnection> mono = connectionPool.acquire()
-                    .doOnNext(emitted::set)
-                    .map(PooledConnection::new)
-                    .doOnCancel(() -> {
+                .doOnNext(emitted::set)
+                .map(PooledConnection::new)
+                .doOnCancel(() -> {
 
-                        PooledRef<Connection> ref = emitted.get();
-                        if (ref != null && emitted.compareAndSet(ref, null)) {
-                            ref.release().subscribe();
-                        }
-                    });
+                    PooledRef<Connection> ref = emitted.get();
+                    if (ref != null && emitted.compareAndSet(ref, null)) {
+                        ref.release().subscribe();
+                    }
+                });
 
             if (!this.maxAcquireTime.isZero()) {
                 mono = mono.timeout(this.maxAcquireTime);

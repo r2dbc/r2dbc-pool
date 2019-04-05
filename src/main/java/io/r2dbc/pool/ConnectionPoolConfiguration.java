@@ -36,11 +36,11 @@ public final class ConnectionPoolConfiguration {
 
     private final Duration maxIdleTime;
 
-    private final int initialSize;
-
     private final Duration maxCreateConnectionTime;
 
     private final Duration maxAcquireTime;
+
+    private final int initialSize;
 
     private final int maxSize;
 
@@ -125,7 +125,8 @@ public final class ConnectionPoolConfiguration {
 
         private Duration maxAcquireTime = Duration.ZERO;  // ZERO indicates no-timeout
 
-        private Consumer<PoolBuilder<Connection>> customizer = poolBuilder -> {};  // no-op
+        private Consumer<PoolBuilder<Connection>> customizer = poolBuilder -> {
+        };  // no-op
 
         @Nullable
         private String validationQuery;
@@ -199,7 +200,7 @@ public final class ConnectionPoolConfiguration {
 
         /**
          * Configure {@link Duration timeout} for acquiring a {@link Connection} from pool. Default is no timeout.
-         *
+         * <p>
          * When acquiring a {@link Connection} requires obtaining a new {@link Connection} from underlying {@link ConnectionFactory}, this timeout
          * also applies to get the new one.
          *
@@ -248,7 +249,7 @@ public final class ConnectionPoolConfiguration {
          */
         public ConnectionPoolConfiguration build() {
             return new ConnectionPoolConfiguration(this.connectionFactory, this.maxIdleTime,
-                    this.initialSize, this.maxSize, this.validationQuery, this.maxCreateConnectionTime, this.maxAcquireTime, this.customizer);
+                this.initialSize, this.maxSize, this.validationQuery, this.maxCreateConnectionTime, this.maxAcquireTime, this.customizer);
         }
 
         @Override
@@ -256,11 +257,11 @@ public final class ConnectionPoolConfiguration {
             return "Builder{" +
                 "connectionFactory='" + this.connectionFactory + '\'' +
                 ", maxIdleTime='" + this.maxIdleTime + '\'' +
+                ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +
+                ", maxAcquireTime='" + this.maxAcquireTime + '\'' +
                 ", initialSize='" + this.initialSize + '\'' +
                 ", maxSize='" + this.maxSize + '\'' +
                 ", validationQuery='" + this.validationQuery + '\'' +
-                ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +
-                ", maxAcquireTime='" + this.maxAcquireTime + '\'' +
                 '}';
         }
     }
