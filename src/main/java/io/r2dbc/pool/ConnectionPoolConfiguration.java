@@ -19,6 +19,7 @@ package io.r2dbc.pool;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import reactor.pool.PoolBuilder;
+import reactor.pool.PoolMetricsRecorder;
 import reactor.util.annotation.Nullable;
 
 import java.time.Duration;
@@ -40,6 +41,8 @@ public final class ConnectionPoolConfiguration {
 
     private final Duration maxAcquireTime;
 
+    private final Duration maxLifeTime;
+
     private final int initialSize;
 
     private final int maxSize;
@@ -49,9 +52,12 @@ public final class ConnectionPoolConfiguration {
 
     private final Consumer<PoolBuilder<Connection>> customizer;
 
+    private final PoolMetricsRecorder metricsRecorder;
+
     private ConnectionPoolConfiguration(ConnectionFactory connectionFactory, Duration maxIdleTime,
                                         int initialSize, int maxSize, @Nullable String validationQuery, Duration maxCreateConnectionTime,
-                                        Duration maxAcquireTime, Consumer<PoolBuilder<Connection>> customizer) {
+                                        Duration maxAcquireTime, Duration maxLifeTime, Consumer<PoolBuilder<Connection>> customizer,
+                                        PoolMetricsRecorder metricsRecorder) {
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.initialSize = initialSize;
         this.maxSize = maxSize;
@@ -59,7 +65,9 @@ public final class ConnectionPoolConfiguration {
         this.validationQuery = validationQuery;
         this.maxCreateConnectionTime = maxCreateConnectionTime;
         this.maxAcquireTime = maxAcquireTime;
+        this.maxLifeTime = maxLifeTime;
         this.customizer = customizer;
+        this.metricsRecorder = metricsRecorder;
     }
 
     /**
@@ -102,8 +110,16 @@ public final class ConnectionPoolConfiguration {
         return this.maxAcquireTime;
     }
 
+    Duration getMaxLifeTime() {
+        return this.maxLifeTime;
+    }
+
     Consumer<PoolBuilder<Connection>> getCustomizer() {
         return this.customizer;
+    }
+
+    PoolMetricsRecorder getMetricsRecorder() {
+        return this.metricsRecorder;
     }
 
     /**
@@ -125,11 +141,15 @@ public final class ConnectionPoolConfiguration {
 
         private Duration maxAcquireTime = Duration.ZERO;  // ZERO indicates no-timeout
 
+        private Duration maxLifeTime = Duration.ZERO;  // ZERO indicates no-lifetime
+
         private Consumer<PoolBuilder<Connection>> customizer = poolBuilder -> {
         };  // no-op
 
         @Nullable
         private String validationQuery;
+
+        private PoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
         private Builder(ConnectionFactory connectionFactory) {
             this.connectionFactory = connectionFactory;
@@ -219,6 +239,23 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
+         * Configure {@link Duration lifetime} of the pooled {@link Connection} in the pool. Default is no timeout.
+         *
+         * @param maxLifeTime the maximum lifetime of the connection in the pool, must not be {@code null} and must not be negative.
+         *                    {@link Duration#ZERO} indicates no lifetime.
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code maxLifeTime} is negative.
+         */
+        public Builder maxLifeTime(Duration maxLifeTime) {
+            Assert.requireNonNull(maxLifeTime, "maxLifeTime must not be null");
+            if (maxLifeTime.isNegative()) {
+                throw new IllegalArgumentException("maxLifeTime must not be negative");
+            }
+            this.maxLifeTime = maxLifeTime;
+            return this;
+        }
+
+        /**
          * Configure a validation query.
          *
          * @param validationQuery the validation query to run before returning a {@link Connection} from the pool, must not be {@code null}.
@@ -243,13 +280,25 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
+         * Configure {@link PoolMetricsRecorder} to calculate elapsed time and instrumentation data
+         * @param recorder the {@link PoolMetricsRecorder}
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code recorder} is {@code null}
+         */
+        public Builder metricsRecorder(PoolMetricsRecorder recorder) {
+            this.metricsRecorder = Assert.requireNonNull(recorder, "PoolMetricsRecorder must not be null");
+            return this;
+        }
+
+        /**
          * Returns a configured {@link ConnectionPoolConfiguration}.
          *
          * @return a configured {@link ConnectionPoolConfiguration}
          */
         public ConnectionPoolConfiguration build() {
             return new ConnectionPoolConfiguration(this.connectionFactory, this.maxIdleTime,
-                this.initialSize, this.maxSize, this.validationQuery, this.maxCreateConnectionTime, this.maxAcquireTime, this.customizer);
+                this.initialSize, this.maxSize, this.validationQuery, this.maxCreateConnectionTime,
+                this.maxAcquireTime, this.maxLifeTime, this.customizer, this.metricsRecorder);
         }
 
         @Override
@@ -259,9 +308,11 @@ public final class ConnectionPoolConfiguration {
                 ", maxIdleTime='" + this.maxIdleTime + '\'' +
                 ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +
                 ", maxAcquireTime='" + this.maxAcquireTime + '\'' +
+                ", maxLifeTime='" + this.maxLifeTime + '\'' +
                 ", initialSize='" + this.initialSize + '\'' +
                 ", maxSize='" + this.maxSize + '\'' +
                 ", validationQuery='" + this.validationQuery + '\'' +
+                ", metricsRecorder='" + this.metricsRecorder + '\'' +
                 '}';
         }
     }

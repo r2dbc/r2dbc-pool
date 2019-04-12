@@ -25,12 +25,15 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.pool.Pool;
 import reactor.pool.PoolBuilder;
+import reactor.pool.PoolMetricsRecorder;
 import reactor.pool.PooledRef;
+import reactor.pool.PooledRefMetadata;
 
 import java.io.Closeable;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 
 /**
@@ -67,7 +70,9 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         int maxSize = configuration.getMaxSize();
         String validationQuery = configuration.getValidationQuery();
         Duration maxIdleTime = configuration.getMaxIdleTime();
+        Duration maxLifeTime = configuration.getMaxLifeTime();
         Consumer<PoolBuilder<Connection>> customizer = configuration.getCustomizer();
+        PoolMetricsRecorder metricsRecorder = configuration.getMetricsRecorder();
 
         // set timeout for create connection
         Mono<Connection> allocator = Mono.from(factory.create());
@@ -75,7 +80,22 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             allocator = allocator.timeout(maxCreateConnectionTime);
         }
 
+
+        // Create eviction predicate that checks maxIdleTime and maxLifeTime.
+        // This is because "PoolBuilder#evictionIdle()" and "PoolBuilder#evictionPredicate()" cannot be used together in
+        // current implementation. (https://github.com/reactor/reactor-pool/issues/33)
+        // To workaround the issue, here defines an evictionPredicate that performs both maxIdleTime and maxLifeTime check.
+        BiPredicate<Connection, PooledRefMetadata> evictionPredicate = (connection, metadata) -> {
+            long maxIdleTimeMills = maxIdleTime.toMillis();
+            long maxLifeTimeMillis = maxLifeTime.toMillis();
+            boolean isIdleTimeExceeded = maxIdleTimeMills != 0 && metadata.idleTime() >= maxIdleTimeMills;
+            boolean isLifeTimeExceeded = maxLifeTimeMillis != 0 && metadata.lifeTime() >= maxLifeTimeMillis;
+            return isIdleTimeExceeded || isLifeTimeExceeded;
+        };
+
         PoolBuilder<Connection> builder = PoolBuilder.from(allocator)
+            .metricsRecorder(metricsRecorder)
+            .evictionPredicate(evictionPredicate)
             .destroyHandler(Connection::close)
             .sizeMax(Runtime.getRuntime().availableProcessors());
 
@@ -93,7 +113,6 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             });
         }
 
-        builder.evictionIdle(maxIdleTime);
 
         customizer.accept(builder);
 
