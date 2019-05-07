@@ -20,17 +20,26 @@ import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
 import io.r2dbc.spi.Wrapped;
+import io.r2dbc.spi.test.MockConnection;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static java.lang.String.format;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -317,6 +326,227 @@ final class ConnectionPoolUnitTests {
             }).verifyComplete();
 
         assertThat(counter).hasValue(2);
+    }
+
+    @Test
+    void shouldConsiderMaxIdleTime() {
+        DelayClock delayClock = new DelayClock();
+        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder(delayClock);
+
+        MockConnection firstConnection = MockConnection.empty();
+        MockConnection secondConnection = MockConnection.empty();
+
+        CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .initialSize(0)
+            .metricsRecorder(metricsRecorder)
+            .maxIdleTime(Duration.ofDays(2))  // set idle to 2 days
+            .build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+
+        delayClock.setDelay(Duration.ofDays(1));
+
+        // should not be evicted
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+        assertThat(connectionFactory.getCreateCount()).isEqualTo(1);
+
+        delayClock.setDelay(Duration.ofDays(3));
+
+        // should be evicted and acquire new conn
+        assertPoolCreatesConnectionSuccessfully(pool, secondConnection);
+        assertThat(connectionFactory.getCreateCount()).isEqualTo(2);
+    }
+
+    @Test
+    void shouldConsiderMaxIdleTimeWithDefault() {
+        DelayClock delayClock = new DelayClock();
+        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder(delayClock);
+
+        MockConnection firstConnection = MockConnection.empty();
+        MockConnection secondConnection = MockConnection.empty();
+        CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .initialSize(0)
+            .metricsRecorder(metricsRecorder)
+            .build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+
+        // should not be evicted
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+
+        delayClock.setDelay(Duration.ofMinutes(30));
+
+        // should be evicted and acquire new conn
+        assertPoolCreatesConnectionSuccessfully(pool, secondConnection);
+        assertThat(connectionFactory.getCreateCount()).isEqualTo(2);
+    }
+
+    @Test
+    void shouldConsiderMaxIdleTimeWithZero() {
+
+        MockConnection firstConnection = MockConnection.empty();
+        MockConnection secondConnection = MockConnection.empty();
+        CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .initialSize(0)
+            .maxIdleTime(Duration.ZERO)
+            .build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+
+        // should not be evicted
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+        assertThat(connectionFactory.getCreateCount()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldConsiderMaxLifetime() {
+
+        DelayClock delayClock = new DelayClock();
+        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder(delayClock);
+
+        MockConnection firstConnection = MockConnection.empty();
+        MockConnection secondConnection = MockConnection.empty();
+
+        CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .initialSize(0)
+            .metricsRecorder(metricsRecorder)
+            .maxLifeTime(Duration.ofDays(1))
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+
+        // creating another connection should return the same connection
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+
+        // set delay, so that first connection will expire
+        delayClock.setDelay(Duration.ofDays(2));
+
+        assertPoolCreatesConnectionSuccessfully(pool, secondConnection);
+
+        // creating another connection should return the same connection
+        assertPoolCreatesConnectionSuccessfully(pool, secondConnection);
+
+        assertThat(connectionFactory.getCreateCount()).isEqualTo(2);
+    }
+
+    @Test
+    void shouldConsiderMaxLifetimeWithDefault() {
+
+        DelayClock delayClock = new DelayClock();
+        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder(delayClock);
+
+        MockConnection firstConnection = MockConnection.empty();
+        CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .initialSize(0)
+            .metricsRecorder(metricsRecorder)
+            .maxIdleTime(Duration.ZERO)  // do not evict by idle time
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+
+        delayClock.setDelay(Duration.ofDays(365));
+
+        // after one year, it should not expire yet
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+        assertThat(connectionFactory.getCreateCount()).isEqualTo(1);
+    }
+
+    private void assertPoolCreatesConnectionSuccessfully(ConnectionPool pool, Connection expectedConnection) {
+        pool.create().as(StepVerifier::create).assertNext(actual -> {
+            assertThat(((Wrapped) actual).unwrap()).isSameAs(expectedConnection);
+            StepVerifier.create(actual.close()).verifyComplete(); // make the connection to be released.
+        }).verifyComplete();
+    }
+
+
+    /**
+     * {@link Clock} that adds specified delay.
+     *
+     * @author Tadaya Tsuyukubo
+     */
+    private static class DelayClock extends Clock {
+
+        private Duration delay = Duration.ZERO;
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Instant instant() {
+            return Instant.now().plus(this.delay);
+        }
+
+        public void setDelay(Duration delay) {
+            this.delay = delay;
+        }
+    }
+
+    /**
+     * {@link ConnectionFactory} that returns provided {@link Connection}s one by one.
+     * Also, keeps how many times {@link #create()} is called.
+     *
+     * @author Tadaya Tsuyukubo
+     */
+    private static class CountingConnectionFactory implements ConnectionFactory {
+
+        private AtomicInteger createCounter = new AtomicInteger();
+
+        private List<Connection> connections = new ArrayList<>();
+
+        public CountingConnectionFactory(Connection... connections) {
+            this.connections.addAll(Arrays.asList(connections));
+        }
+
+        @Override
+        public Publisher<? extends Connection> create() {
+            return Mono.defer(() -> {
+                int count = this.createCounter.getAndIncrement();
+                if (this.connections.size() <= count) {
+                    return Mono.error(new RuntimeException(
+                        format("ConnectionFactory#create is called %d times which is more than given connection size %d.",
+                            count + 1, this.connections.size())));
+                }
+                return Mono.just(this.connections.get(count));
+            });
+        }
+
+        @Override
+        public ConnectionFactoryMetadata getMetadata() {
+            throw new UnsupportedOperationException();
+        }
+
+        /**
+         * Number of times {@link #create()} is called.
+         *
+         * @return num of calls for {@link #create()} method.
+         */
+        public int getCreateCount() {
+            return this.createCounter.get();
+        }
     }
 
 }
