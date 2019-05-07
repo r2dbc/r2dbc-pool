@@ -468,13 +468,46 @@ final class ConnectionPoolUnitTests {
         assertThat(connectionFactory.getCreateCount()).isEqualTo(1);
     }
 
+    @Test
+    void shouldReportMetrics() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        // acquire time should also consider the time to obtain an actual connection
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        assertThat(pool.getMetrics()).isPresent().hasValueSatisfying(actual -> {
+
+            assertThat(actual.acquiredSize()).isZero();
+            assertThat(actual.allocatedSize()).isNotZero().isEqualTo(configuration.getInitialSize());
+            assertThat(actual.idleSize()).isNotZero().isEqualTo(configuration.getInitialSize());
+        });
+
+        Connection connection = pool.create().block(Duration.ZERO);
+
+        assertThat(pool.getMetrics()).isPresent().hasValueSatisfying(actual -> {
+
+            assertThat(actual.acquiredSize()).isEqualTo(1);
+        });
+
+        StepVerifier.create(connection.close()).verifyComplete();
+
+        assertThat(pool.getMetrics()).isPresent().hasValueSatisfying(actual -> {
+
+            assertThat(actual.acquiredSize()).isEqualTo(0);
+        });
+    }
+
     private void assertPoolCreatesConnectionSuccessfully(ConnectionPool pool, Connection expectedConnection) {
         pool.create().as(StepVerifier::create).assertNext(actual -> {
             assertThat(((Wrapped) actual).unwrap()).isSameAs(expectedConnection);
             StepVerifier.create(actual.close()).verifyComplete(); // make the connection to be released.
         }).verifyComplete();
     }
-
 
     /**
      * {@link Clock} that adds specified delay.
