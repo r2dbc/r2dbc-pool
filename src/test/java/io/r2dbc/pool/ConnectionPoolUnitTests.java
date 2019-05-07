@@ -513,9 +513,9 @@ final class ConnectionPoolUnitTests {
      */
     private static class CountingConnectionFactory implements ConnectionFactory {
 
-        private AtomicInteger createCounter = new AtomicInteger();
+        private final AtomicInteger createCounter = new AtomicInteger();
 
-        private List<Connection> connections = new ArrayList<>();
+        private final List<Connection> connections = new ArrayList<>();
 
         public CountingConnectionFactory(Connection... connections) {
             this.connections.addAll(Arrays.asList(connections));

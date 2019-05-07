@@ -7,18 +7,20 @@ import java.time.Clock;
 /**
  * Simple {@link PoolMetricsRecorder} which supports time related feature using {@link Clock}.
  *
- * <p> All "record**" methods are not supported.
+ * <p>All "record**" methods are not supported.
  *
  * @author Tadaya Tsuyukubo
+ * @author Mark Paluch
  */
 public class SimplePoolMetricsRecorder implements PoolMetricsRecorder {
 
-    private Clock clock = Clock.systemUTC();
+    private final Clock clock;
 
     /**
      * Use {@link Clock} with UTC time-zone.
      */
     public SimplePoolMetricsRecorder() {
+        this(Clock.systemUTC());
     }
 
     /**

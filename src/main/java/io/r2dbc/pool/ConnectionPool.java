@@ -80,7 +80,6 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             allocator = allocator.timeout(maxCreateConnectionTime);
         }
 
-
         // Create eviction predicate that checks maxIdleTime and maxLifeTime.
         // This is because "PoolBuilder#evictionIdle()" and "PoolBuilder#evictionPredicate()" cannot be used together in
         // current implementation. (https://github.com/reactor/reactor-pool/issues/33)
@@ -112,7 +111,6 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                 return Flux.from(connection.createStatement(validationQuery).execute()).flatMap(it -> it.map((row, rowMetadata) -> Optional.ofNullable(row.get(0)))).then();
             });
         }
-
 
         customizer.accept(builder);
 

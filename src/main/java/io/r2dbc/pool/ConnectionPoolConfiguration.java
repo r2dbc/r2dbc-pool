@@ -193,9 +193,9 @@ public final class ConnectionPoolConfiguration {
          * @throws IllegalArgumentException if {@code maxIdleTime} is {@code null} or negative value.
          */
         public Builder maxIdleTime(Duration maxIdleTime) {
-            Assert.requireNonNull(maxIdleTime, "MaxIdleTime must not be null");
+            Assert.requireNonNull(maxIdleTime, "maxIdleTime must not be null");
             if (maxIdleTime.isNegative()) {
-                throw new IllegalArgumentException("MaxIdleTime must not be negative");
+                throw new IllegalArgumentException("maxIdleTime must not be negative");
             }
             this.maxIdleTime = maxIdleTime;
             return this;
@@ -281,6 +281,7 @@ public final class ConnectionPoolConfiguration {
 
         /**
          * Configure {@link PoolMetricsRecorder} to calculate elapsed time and instrumentation data
+         *
          * @param recorder the {@link PoolMetricsRecorder}
          * @return this {@link Builder}
          * @throws IllegalArgumentException if {@code recorder} is {@code null}
