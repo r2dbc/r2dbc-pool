@@ -21,11 +21,15 @@ import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
 import io.r2dbc.spi.Wrapped;
 import io.r2dbc.spi.test.MockConnection;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
+import java.lang.management.ManagementFactory;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -53,6 +57,12 @@ import static org.mockito.Mockito.when;
  */
 @SuppressWarnings("unchecked")
 final class ConnectionPoolUnitTests {
+
+    @AfterEach
+    void tearDown() {
+        // clean up connection-pool mbeans
+        JmxTestUtils.unregisterPoolMbeans();
+    }
 
     @Test
     void shouldReturnOriginalMetadata() {
@@ -500,6 +510,81 @@ final class ConnectionPoolUnitTests {
 
             assertThat(actual.acquiredSize()).isEqualTo(0);
         });
+    }
+
+    @Test
+    void shouldRegisterToJmx() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        // acquire time should also consider the time to obtain an actual connection
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .name("my-pool")
+            .registerJmx(true)
+            .build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
+
+        assertThat(mBeanServer.getDomains()).contains(ConnectionPoolMXBean.DOMAIN);
+
+        List<ObjectName> poolObjectNames = JmxTestUtils.getPoolMBeanNames();
+        assertThat(poolObjectNames).hasSize(1);
+        ObjectName objectName = poolObjectNames.get(0);
+        assertThat(objectName.getKeyPropertyList())
+            .hasSize(2)
+            .containsEntry("name", "my-pool")
+            .containsEntry("type", ConnectionPool.class.getSimpleName());
+    }
+
+    @Test
+    void shouldNotRegisterToJmx() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        // acquire time should also consider the time to obtain an actual connection
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .registerJmx(false)
+            .build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
+
+        assertThat(mBeanServer.getDomains()).doesNotContain(ConnectionPoolMXBean.DOMAIN);
+    }
+
+    @Test
+    void shouldMBeanUnregisteredAtPoolDisposal() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        // acquire time should also consider the time to obtain an actual connection
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+
+        // pool.dispose() calls connection.close()
+        when(connectionMock.close()).thenReturn(Mono.empty());
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .registerJmx(true)
+            .name("my-pool")
+            .build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
+
+        assertThat(mBeanServer.getDomains()).contains(ConnectionPoolMXBean.DOMAIN);
+
+        pool.dispose();
+
+        assertThat(mBeanServer.getDomains()).doesNotContain(ConnectionPoolMXBean.DOMAIN);
+
     }
 
     private void assertPoolCreatesConnectionSuccessfully(ConnectionPool pool, Connection expectedConnection) {

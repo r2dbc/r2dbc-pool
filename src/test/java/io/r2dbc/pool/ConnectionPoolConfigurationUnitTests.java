@@ -42,6 +42,8 @@ final class ConnectionPoolConfigurationUnitTests {
             .maxAcquireTime(Duration.ofMinutes(2))
             .initialSize(2)
             .maxSize(20)
+            .name("bar")
+            .registerJmx(true)
             .build();
 
         assertThat(configuration)
@@ -51,7 +53,9 @@ final class ConnectionPoolConfigurationUnitTests {
             .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ofMinutes(1))
             .hasFieldOrPropertyWithValue("maxAcquireTime", Duration.ofMinutes(2))
             .hasFieldOrPropertyWithValue("initialSize", 2)
-            .hasFieldOrPropertyWithValue("maxSize", 20);
+            .hasFieldOrPropertyWithValue("maxSize", 20)
+            .hasFieldOrPropertyWithValue("name", "bar")
+            .hasFieldOrPropertyWithValue("registerJmx", true);
     }
 
     @Test
@@ -61,17 +65,28 @@ final class ConnectionPoolConfigurationUnitTests {
 
         assertThat(configuration)
             .hasFieldOrPropertyWithValue("connectionFactory", connectionFactoryMock)
+            .hasFieldOrPropertyWithValue("name", null)
             .hasFieldOrPropertyWithValue("validationQuery", null)
             .hasFieldOrPropertyWithValue("maxIdleTime", Duration.ofMinutes(30))
             .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ZERO)
             .hasFieldOrPropertyWithValue("maxAcquireTime", Duration.ZERO)
             .hasFieldOrPropertyWithValue("initialSize", 10)
-            .hasFieldOrPropertyWithValue("maxSize", 10);
+            .hasFieldOrPropertyWithValue("maxSize", 10)
+            .hasFieldOrPropertyWithValue("registerJmx", false);
     }
 
     @Test
     void constructorNoConnectionFactory() {
         assertThatIllegalArgumentException().isThrownBy(() -> ConnectionPoolConfiguration.builder(null))
             .withMessage("ConnectionFactory must not be null");
+    }
+
+    @Test
+    void invalidConfiguration() {
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+
+        assertThatIllegalArgumentException().isThrownBy(() ->
+            ConnectionPoolConfiguration.builder(connectionFactoryMock).registerJmx(true).build()
+        ).withMessage("name must not be null when registering to JMX");
     }
 }
