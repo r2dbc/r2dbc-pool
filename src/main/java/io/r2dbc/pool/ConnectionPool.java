@@ -23,6 +23,7 @@ import io.r2dbc.spi.Wrapped;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.pool.InstrumentedPool;
 import reactor.pool.Pool;
 import reactor.pool.PoolBuilder;
 import reactor.pool.PoolMetricsRecorder;
@@ -164,5 +165,58 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
     @Override
     public ConnectionFactory unwrap() {
         return this.factory;
+    }
+
+    /**
+     * Returns {@link PoolMetrics} if available.
+     *
+     * @return
+     */
+    public Optional<PoolMetrics> getMetrics() {
+
+        if (this.connectionPool instanceof InstrumentedPool) {
+            return Optional.of(((InstrumentedPool<?>) this.connectionPool).metrics()).map(PoolMetricsWrapper::new);
+        }
+
+        return Optional.empty();
+    }
+
+    private class PoolMetricsWrapper implements PoolMetrics {
+
+        private final InstrumentedPool.PoolMetrics delegate;
+
+        PoolMetricsWrapper(InstrumentedPool.PoolMetrics delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public int acquiredSize() {
+            return delegate.acquiredSize();
+        }
+
+        @Override
+        public int allocatedSize() {
+            return delegate.allocatedSize();
+        }
+
+        @Override
+        public int idleSize() {
+            return delegate.idleSize();
+        }
+
+        @Override
+        public int pendingAcquireSize() {
+            return delegate.pendingAcquireSize();
+        }
+
+        @Override
+        public int getMaxAllocatedSize() {
+            return delegate.getMaxAllocatedSize();
+        }
+
+        @Override
+        public int getMaxPendingAcquireSize() {
+            return delegate.getMaxPendingAcquireSize();
+        }
     }
 }
