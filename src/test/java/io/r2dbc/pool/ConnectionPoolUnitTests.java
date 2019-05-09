@@ -286,7 +286,7 @@ final class ConnectionPoolUnitTests {
         Mono<Connection> connectionPublisher = Mono.defer(() -> {
             int count = counter.incrementAndGet();  // 1, 2, 3,...
             if (count % 2 == 0) {
-                return Mono.delay(Duration.ofMillis(100)).thenReturn(connectionMock);  // slow creation
+                return Mono.delay(Duration.ofMillis(500)).thenReturn(connectionMock);  // slow creation
             }
             return Mono.just(connectionMock);  // fast creation
         });
