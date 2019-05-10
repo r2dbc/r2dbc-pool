@@ -40,7 +40,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <r2dbc-spi.version>${project.version}</r2dbc-spi.version>
-        <reactor-pool.version>0.0.1.BUILD-SNAPSHOT</reactor-pool.version>
+        <reactor-pool.version>0.0.1.M1</reactor-pool.version>
         <reactor.version>Californium-SR6</reactor.version>
         <slf4j.version>1.7.26</slf4j.version>
     </properties>
