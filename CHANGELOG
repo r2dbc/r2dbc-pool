@@ -1,3 +1,10 @@
-R2DBC Proxy Changelog
+R2DBC Pool Changelog
 =============================
 
+0.8.0.M8
+------------------
+* Inception
+* Upgrade dependencies #14
+* Upgrade to reactor-pool 0.0.1.M1 #13
+* Provide methods to retrieve current pool information #4
+* Fix Surefire test execution #3
