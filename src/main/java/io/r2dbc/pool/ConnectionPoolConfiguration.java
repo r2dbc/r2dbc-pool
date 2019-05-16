@@ -88,8 +88,7 @@ public final class ConnectionPoolConfiguration {
         return maxIdleTime;
     }
 
-
-    public int getInitialSize() {
+    int getInitialSize() {
         return initialSize;
     }
 
