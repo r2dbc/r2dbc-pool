@@ -14,13 +14,15 @@ import static java.util.stream.Collectors.toList;
  *
  * @author Tadaya Tsuyukubo
  */
-public class JmxTestUtils {
+class JmxTestUtils {
 
     private JmxTestUtils() {
     }
 
     public static List<ObjectName> getPoolMBeanNames() {
-        MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
+
+        MBeanServer mBeanServer = getMBeanServer();
+
         return mBeanServer.queryMBeans(null, null)
             .stream()
             .map(ObjectInstance::getObjectName)
@@ -29,12 +31,16 @@ public class JmxTestUtils {
     }
 
     public static void unregisterPoolMbeans() {
-        MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
+        MBeanServer mBeanServer = getMBeanServer();
         getPoolMBeanNames().forEach(objectName -> {
             try {
                 mBeanServer.unregisterMBean(objectName);
             } catch (JMException e) {
             }
         });
+    }
+
+    private static MBeanServer getMBeanServer() {
+        return ManagementFactory.getPlatformMBeanServer();
     }
 }

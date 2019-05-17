@@ -24,12 +24,14 @@ import io.r2dbc.spi.test.MockConnection;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
+import org.springframework.util.ReflectionUtils;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 import java.lang.management.ManagementFactory;
+import java.lang.reflect.Field;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -45,7 +47,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static java.lang.String.format;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -584,7 +588,39 @@ final class ConnectionPoolUnitTests {
         pool.dispose();
 
         assertThat(mBeanServer.getDomains()).doesNotContain(ConnectionPoolMXBean.DOMAIN);
+    }
 
+    @Test
+    void shouldPropagateGracefullyDestroyHandlerFailure() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        // acquire time should also consider the time to obtain an actual connection
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+
+        // pool.dispose() calls connection.close()
+        when(connectionMock.close()).thenReturn(Mono.empty());
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        Field field = ReflectionUtils.findField(ConnectionPool.class, "destroyHandlers");
+        field.setAccessible(true);
+        List<Runnable> destroyHandlers = (List<Runnable>) ReflectionUtils.getField(field, pool);
+
+        IllegalArgumentException iae = new IllegalArgumentException();
+
+        destroyHandlers.add(() -> {
+            throw new IllegalStateException();
+        });
+
+        destroyHandlers.add(() -> {
+            throw iae;
+        });
+
+        assertThatThrownBy(pool::dispose).isInstanceOf(IllegalStateException.class).hasSuppressedException(iae);
+        verify(connectionMock, times(10)).close();
     }
 
     private void assertPoolCreatesConnectionSuccessfully(ConnectionPool pool, Connection expectedConnection) {

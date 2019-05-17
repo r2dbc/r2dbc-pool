@@ -140,7 +140,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
             AtomicReference<PooledRef<Connection>> emitted = new AtomicReference<>();
 
-            Mono<PooledConnection> mono = connectionPool.acquire()
+            Mono<PooledConnection> mono = this.connectionPool.acquire()
                 .doOnNext(emitted::set)
                 .map(PooledConnection::new)
                 .doOnCancel(() -> {
@@ -165,8 +165,26 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     @Override
     public void dispose() {
-        this.destroyHandlers.forEach(Runnable::run);
+
+        RuntimeException exception = null;
+
+        for (Runnable destroyHandler : this.destroyHandlers) {
+            try {
+                destroyHandler.run();
+            } catch (RuntimeException e) {
+                if (exception == null) {
+                    exception = e;
+                } else {
+                    exception.addSuppressed(e);
+                }
+            }
+        }
+
         this.connectionPool.dispose();
+
+        if (exception != null) {
+            throw exception;
+        }
     }
 
     @Override
@@ -176,7 +194,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     @Override
     public ConnectionFactoryMetadata getMetadata() {
-        return factory.getMetadata();
+        return this.factory.getMetadata();
     }
 
     @Override
@@ -187,7 +205,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
     /**
      * Returns {@link PoolMetrics} if available.
      *
-     * @return
+     * @return the optional pool metrics.
      */
     public Optional<PoolMetrics> getMetrics() {
 
@@ -242,32 +260,32 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         @Override
         public int acquiredSize() {
-            return delegate.acquiredSize();
+            return this.delegate.acquiredSize();
         }
 
         @Override
         public int allocatedSize() {
-            return delegate.allocatedSize();
+            return this.delegate.allocatedSize();
         }
 
         @Override
         public int idleSize() {
-            return delegate.idleSize();
+            return this.delegate.idleSize();
         }
 
         @Override
         public int pendingAcquireSize() {
-            return delegate.pendingAcquireSize();
+            return this.delegate.pendingAcquireSize();
         }
 
         @Override
         public int getMaxAllocatedSize() {
-            return delegate.getMaxAllocatedSize();
+            return this.delegate.getMaxAllocatedSize();
         }
 
         @Override
         public int getMaxPendingAcquireSize() {
-            return delegate.getMaxPendingAcquireSize();
+            return this.delegate.getMaxPendingAcquireSize();
         }
     }
 
@@ -281,32 +299,32 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         @Override
         public int getAcquiredSize() {
-            return poolMetrics.acquiredSize();
+            return this.poolMetrics.acquiredSize();
         }
 
         @Override
         public int getAllocatedSize() {
-            return poolMetrics.allocatedSize();
+            return this.poolMetrics.allocatedSize();
         }
 
         @Override
         public int getIdleSize() {
-            return poolMetrics.idleSize();
+            return this.poolMetrics.idleSize();
         }
 
         @Override
         public int getPendingAcquireSize() {
-            return poolMetrics.pendingAcquireSize();
+            return this.poolMetrics.pendingAcquireSize();
         }
 
         @Override
         public int getMaxAllocatedSize() {
-            return poolMetrics.getMaxAllocatedSize();
+            return this.poolMetrics.getMaxAllocatedSize();
         }
 
         @Override
         public int getMaxPendingAcquireSize() {
-            return poolMetrics.getMaxPendingAcquireSize();
+            return this.poolMetrics.getMaxPendingAcquireSize();
         }
     }
 }

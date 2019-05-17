@@ -29,6 +29,7 @@ import static org.mockito.Mockito.mock;
  * Unit tests for {@link ConnectionPoolConfiguration}.
  *
  * @author Mark Paluch
+ * @author Tadaya Tsuyukubo
  */
 final class ConnectionPoolConfigurationUnitTests {
 

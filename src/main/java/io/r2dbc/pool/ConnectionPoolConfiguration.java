@@ -309,6 +309,7 @@ public final class ConnectionPoolConfiguration {
             this.metricsRecorder = Assert.requireNonNull(recorder, "PoolMetricsRecorder must not be null");
             return this;
         }
+
         /**
          * Configure whether to register to JMX. Defaults to {@code false}.
          *
@@ -319,6 +320,7 @@ public final class ConnectionPoolConfiguration {
             this.registerJmx = registerJmx;
             return this;
         }
+
         /**
          * Configure the name of the connection pool.
          *
