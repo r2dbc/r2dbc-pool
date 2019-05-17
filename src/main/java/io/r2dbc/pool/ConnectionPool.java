@@ -30,8 +30,16 @@ import reactor.pool.PoolMetricsRecorder;
 import reactor.pool.PooledRef;
 import reactor.pool.PooledRefMetadata;
 
+import javax.management.JMException;
+import javax.management.MBeanServer;
+import javax.management.MalformedObjectNameException;
+import javax.management.ObjectName;
 import java.io.Closeable;
+import java.lang.management.ManagementFactory;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Hashtable;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
@@ -51,6 +59,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     private final Duration maxAcquireTime;
 
+    private final List<Runnable> destroyHandlers = new ArrayList<>();
+
     /**
      * Creates a new connection factory.
      *
@@ -61,6 +71,12 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         this.connectionPool = createConnectionPool(Assert.requireNonNull(configuration, "ConnectionPoolConfiguration must not be null"));
         this.factory = configuration.getConnectionFactory();
         this.maxAcquireTime = configuration.getMaxAcquireTime();
+
+        if (configuration.isRegisterJmx()) {
+            getMetrics().ifPresent(poolMetrics -> {
+                registerToJmx(poolMetrics, configuration.getName());
+            });
+        }
     }
 
     private Pool<Connection> createConnectionPool(ConnectionPoolConfiguration configuration) {
@@ -124,7 +140,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
             AtomicReference<PooledRef<Connection>> emitted = new AtomicReference<>();
 
-            Mono<PooledConnection> mono = connectionPool.acquire()
+            Mono<PooledConnection> mono = this.connectionPool.acquire()
                 .doOnNext(emitted::set)
                 .map(PooledConnection::new)
                 .doOnCancel(() -> {
@@ -149,7 +165,26 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     @Override
     public void dispose() {
+
+        RuntimeException exception = null;
+
+        for (Runnable destroyHandler : this.destroyHandlers) {
+            try {
+                destroyHandler.run();
+            } catch (RuntimeException e) {
+                if (exception == null) {
+                    exception = e;
+                } else {
+                    exception.addSuppressed(e);
+                }
+            }
+        }
+
         this.connectionPool.dispose();
+
+        if (exception != null) {
+            throw exception;
+        }
     }
 
     @Override
@@ -159,7 +194,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     @Override
     public ConnectionFactoryMetadata getMetadata() {
-        return factory.getMetadata();
+        return this.factory.getMetadata();
     }
 
     @Override
@@ -170,7 +205,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
     /**
      * Returns {@link PoolMetrics} if available.
      *
-     * @return
+     * @return the optional pool metrics.
      */
     public Optional<PoolMetrics> getMetrics() {
 
@@ -179,6 +214,40 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         }
 
         return Optional.empty();
+    }
+
+    private void registerToJmx(PoolMetrics poolMetrics, String name) {
+        MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
+
+        try {
+            ObjectName jmxName = getPoolObjectName(name);
+            mBeanServer.registerMBean(new ConnectionPoolMXBeanImpl(poolMetrics), jmxName);
+
+            // add a destroy handler to unregister the mbean
+            this.destroyHandlers.add(() -> {
+                try {
+                    mBeanServer.unregisterMBean(jmxName);
+                } catch (JMException e) {
+                    throw new ConnectionPoolException("Failed to unregister from JMX", e);
+                }
+            });
+        } catch (JMException e) {
+            throw new ConnectionPoolException("Failed to register to JMX", e);
+        }
+    }
+
+    /**
+     * Construct JMX {@link ObjectName}.
+     *
+     * @param name connection pool name
+     * @return JMX {@link ObjectName}
+     * @throws MalformedObjectNameException when invalid objectname is constructed
+     */
+    protected ObjectName getPoolObjectName(String name) throws MalformedObjectNameException {
+        Hashtable<String, String> prop = new Hashtable<>();
+        prop.put("type", ConnectionPool.class.getSimpleName());
+        prop.put("name", name);
+        return new ObjectName(ConnectionPoolMXBean.DOMAIN, prop);
     }
 
     private class PoolMetricsWrapper implements PoolMetrics {
@@ -191,32 +260,71 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         @Override
         public int acquiredSize() {
-            return delegate.acquiredSize();
+            return this.delegate.acquiredSize();
         }
 
         @Override
         public int allocatedSize() {
-            return delegate.allocatedSize();
+            return this.delegate.allocatedSize();
         }
 
         @Override
         public int idleSize() {
-            return delegate.idleSize();
+            return this.delegate.idleSize();
         }
 
         @Override
         public int pendingAcquireSize() {
-            return delegate.pendingAcquireSize();
+            return this.delegate.pendingAcquireSize();
         }
 
         @Override
         public int getMaxAllocatedSize() {
-            return delegate.getMaxAllocatedSize();
+            return this.delegate.getMaxAllocatedSize();
         }
 
         @Override
         public int getMaxPendingAcquireSize() {
-            return delegate.getMaxPendingAcquireSize();
+            return this.delegate.getMaxPendingAcquireSize();
+        }
+    }
+
+    private class ConnectionPoolMXBeanImpl implements ConnectionPoolMXBean {
+
+        private final PoolMetrics poolMetrics;
+
+        ConnectionPoolMXBeanImpl(PoolMetrics poolMetrics) {
+            this.poolMetrics = poolMetrics;
+        }
+
+        @Override
+        public int getAcquiredSize() {
+            return this.poolMetrics.acquiredSize();
+        }
+
+        @Override
+        public int getAllocatedSize() {
+            return this.poolMetrics.allocatedSize();
+        }
+
+        @Override
+        public int getIdleSize() {
+            return this.poolMetrics.idleSize();
+        }
+
+        @Override
+        public int getPendingAcquireSize() {
+            return this.poolMetrics.pendingAcquireSize();
+        }
+
+        @Override
+        public int getMaxAllocatedSize() {
+            return this.poolMetrics.getMaxAllocatedSize();
+        }
+
+        @Override
+        public int getMaxPendingAcquireSize() {
+            return this.poolMetrics.getMaxPendingAcquireSize();
         }
     }
 }
