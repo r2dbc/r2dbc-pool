@@ -165,26 +165,39 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     @Override
     public void dispose() {
+        disposeLater().block();
+    }
 
-        RuntimeException exception = null;
-
-        for (Runnable destroyHandler : this.destroyHandlers) {
-            try {
-                destroyHandler.run();
-            } catch (RuntimeException e) {
-                if (exception == null) {
-                    exception = e;
-                } else {
-                    exception.addSuppressed(e);
+    /**
+     * Dispose this {@link ConnectionPool} in non-blocking flow.
+     * <p>
+     * When multiple errors occurred during dispose flow, they are added as
+     * suppressed errors onto the first error.
+     *
+     * @return a Mono triggering the shutdown of the pool once subscribed.
+     */
+    public Mono<Void> disposeLater() {
+        List<Throwable> errors = new ArrayList<>();
+        return Flux.fromIterable(this.destroyHandlers)
+            .flatMap(Mono::fromRunnable)
+            .concatWith(this.connectionPool.disposeLater())
+            .onErrorContinue((throwable, o) -> {
+                errors.add(throwable);
+            })
+            .then(Mono.defer(() -> {
+                if (errors.isEmpty()) {
+                    return Mono.empty();
                 }
-            }
-        }
 
-        this.connectionPool.dispose();
+                Throwable rootError = errors.get(0);
+                if (errors.size() == 1) {
+                    return Mono.error(rootError);
+                }
 
-        if (exception != null) {
-            throw exception;
-        }
+                errors.subList(1, errors.size()).forEach(rootError::addSuppressed);
+
+                return Mono.error(rootError);
+            }));
     }
 
     @Override

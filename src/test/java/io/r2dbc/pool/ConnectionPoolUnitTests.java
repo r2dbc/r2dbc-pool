@@ -593,8 +593,46 @@ final class ConnectionPoolUnitTests {
     @Test
     void shouldPropagateGracefullyDestroyHandlerFailure() {
 
-        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
+        ConnectionPool pool = createConnectionPoolForDisposeTest(connectionMock);
+
+        IllegalArgumentException iae = new IllegalArgumentException();
+
+        addDestroyHandler(pool, () -> {
+            throw new IllegalStateException();
+        });
+        addDestroyHandler(pool, () -> {
+            throw iae;
+        });
+
+        assertThatThrownBy(pool::dispose).isInstanceOf(IllegalStateException.class).hasSuppressedException(iae);
+        verify(connectionMock, times(10)).close();
+    }
+
+    @Test
+    void shouldPropagateGracefullyDestroyHandlerFailureOnDisposeLater() {
+
+        Connection connectionMock = mock(Connection.class);
+        ConnectionPool pool = createConnectionPoolForDisposeTest(connectionMock);
+
+        IllegalArgumentException iae = new IllegalArgumentException();
+
+        addDestroyHandler(pool, () -> {
+            throw new IllegalStateException();
+        });
+        addDestroyHandler(pool, () -> {
+            throw iae;
+        });
+
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        StepVerifier.create(pool.disposeLater()).consumeErrorWith(thrown::set).verify();
+
+        assertThat(thrown.get()).isInstanceOf(IllegalStateException.class).hasSuppressedException(iae);
+        verify(connectionMock, times(10)).close();
+    }
+
+    private ConnectionPool createConnectionPoolForDisposeTest(Connection connectionMock) {
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
 
         // acquire time should also consider the time to obtain an actual connection
         when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
@@ -603,24 +641,14 @@ final class ConnectionPoolUnitTests {
         when(connectionMock.close()).thenReturn(Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
-        ConnectionPool pool = new ConnectionPool(configuration);
+        return new ConnectionPool(configuration);
+    }
 
+    private void addDestroyHandler(ConnectionPool pool, Runnable runnable) {
         Field field = ReflectionUtils.findField(ConnectionPool.class, "destroyHandlers");
         field.setAccessible(true);
         List<Runnable> destroyHandlers = (List<Runnable>) ReflectionUtils.getField(field, pool);
-
-        IllegalArgumentException iae = new IllegalArgumentException();
-
-        destroyHandlers.add(() -> {
-            throw new IllegalStateException();
-        });
-
-        destroyHandlers.add(() -> {
-            throw iae;
-        });
-
-        assertThatThrownBy(pool::dispose).isInstanceOf(IllegalStateException.class).hasSuppressedException(iae);
-        verify(connectionMock, times(10)).close();
+        destroyHandlers.add(runnable);
     }
 
     private void assertPoolCreatesConnectionSuccessfully(ConnectionPool pool, Connection expectedConnection) {
