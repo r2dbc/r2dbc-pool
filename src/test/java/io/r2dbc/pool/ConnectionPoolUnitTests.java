@@ -625,7 +625,7 @@ final class ConnectionPoolUnitTests {
         });
 
         AtomicReference<Throwable> thrown = new AtomicReference<>();
-        StepVerifier.create(pool.disposeLater()).consumeErrorWith(thrown::set).verify();
+        pool.disposeLater().as(StepVerifier::create).consumeErrorWith(thrown::set).verify();
 
         assertThat(thrown.get()).isInstanceOf(IllegalStateException.class).hasSuppressedException(iae);
         verify(connectionMock, times(10)).close();
