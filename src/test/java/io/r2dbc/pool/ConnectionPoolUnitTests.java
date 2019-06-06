@@ -631,6 +631,21 @@ final class ConnectionPoolUnitTests {
         verify(connectionMock, times(10)).close();
     }
 
+    @Test
+    void disposedPoolShouldNoOpOnClose() {
+
+        Connection connectionMock = mock(Connection.class);
+        ConnectionPool pool = createConnectionPoolForDisposeTest(connectionMock);
+        pool.close();
+
+        addDestroyHandler(pool, () -> {
+            throw new IllegalStateException();
+        });
+
+        pool.disposeLater().as(StepVerifier::create).verifyComplete();
+        verify(connectionMock, times(10)).close();
+    }
+
     private ConnectionPool createConnectionPoolForDisposeTest(Connection connectionMock) {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
 

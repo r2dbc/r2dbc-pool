@@ -177,6 +177,11 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
      * @return a Mono triggering the shutdown of the pool once subscribed.
      */
     public Mono<Void> disposeLater() {
+
+        if (isDisposed()) {
+            return Mono.empty();
+        }
+
         List<Throwable> errors = new ArrayList<>();
         return Flux.fromIterable(this.destroyHandlers)
             .flatMap(Mono::fromRunnable)
@@ -221,11 +226,9 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
      * @return the optional pool metrics.
      */
     public Optional<PoolMetrics> getMetrics() {
-
         if (this.connectionPool instanceof InstrumentedPool) {
             return Optional.of(((InstrumentedPool<?>) this.connectionPool).metrics()).map(PoolMetricsWrapper::new);
         }
-
         return Optional.empty();
     }
 
