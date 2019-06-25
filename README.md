@@ -55,6 +55,8 @@ ConnectionFactory connectionFactory = ConnectionFactories.get(ConnectionFactoryO
    .option(DATABASE, "…")
    .build());
 
+`DRIVER` above refers to the r2dbc-driver, currently one of "h2","postgresql", "mssql"
+
 Publisher<? extends Connection> connectionPublisher = connectionFactory.create();
 
 // Alternative: Creating a Mono using Project Reactor
