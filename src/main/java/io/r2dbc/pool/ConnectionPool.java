@@ -24,8 +24,8 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.pool.InstrumentedPool;
-import reactor.pool.Pool;
 import reactor.pool.PoolBuilder;
+import reactor.pool.PoolConfig;
 import reactor.pool.PoolMetricsRecorder;
 import reactor.pool.PooledRef;
 import reactor.pool.PooledRefMetadata;
@@ -55,7 +55,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     private final ConnectionFactory factory;
 
-    private final Pool<Connection> connectionPool;
+    private final InstrumentedPool<Connection> connectionPool;
 
     private final Duration maxAcquireTime;
 
@@ -79,7 +79,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         }
     }
 
-    private Pool<Connection> createConnectionPool(ConnectionPoolConfiguration configuration) {
+    private InstrumentedPool<Connection> createConnectionPool(ConnectionPoolConfiguration configuration) {
 
         ConnectionFactory factory = configuration.getConnectionFactory();
         Duration maxCreateConnectionTime = configuration.getMaxCreateConnectionTime();
@@ -88,7 +88,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         String validationQuery = configuration.getValidationQuery();
         Duration maxIdleTime = configuration.getMaxIdleTime();
         Duration maxLifeTime = configuration.getMaxLifeTime();
-        Consumer<PoolBuilder<Connection>> customizer = configuration.getCustomizer();
+        Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer = configuration.getCustomizer();
         PoolMetricsRecorder metricsRecorder = configuration.getMetricsRecorder();
 
         // set timeout for create connection
@@ -109,7 +109,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             return isIdleTimeExceeded || isLifeTimeExceeded;
         };
 
-        PoolBuilder<Connection> builder = PoolBuilder.from(allocator)
+        PoolBuilder<Connection, PoolConfig<Connection>> builder = PoolBuilder.from(allocator)
             .metricsRecorder(metricsRecorder)
             .evictionPredicate(evictionPredicate)
             .destroyHandler(Connection::close)
@@ -131,7 +131,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         customizer.accept(builder);
 
-        return builder.build();
+        return builder.fifo();
     }
 
     @Override
@@ -226,10 +226,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
      * @return the optional pool metrics.
      */
     public Optional<PoolMetrics> getMetrics() {
-        if (this.connectionPool instanceof InstrumentedPool) {
-            return Optional.of(((InstrumentedPool<?>) this.connectionPool).metrics()).map(PoolMetricsWrapper::new);
-        }
-        return Optional.empty();
+        return Optional.of(this.connectionPool.metrics()).map(PoolMetricsWrapper::new);
     }
 
     private void registerToJmx(PoolMetrics poolMetrics, String name) {

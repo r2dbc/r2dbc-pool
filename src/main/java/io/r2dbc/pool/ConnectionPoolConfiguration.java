@@ -19,6 +19,7 @@ package io.r2dbc.pool;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import reactor.pool.PoolBuilder;
+import reactor.pool.PoolConfig;
 import reactor.pool.PoolMetricsRecorder;
 import reactor.util.annotation.Nullable;
 
@@ -50,7 +51,7 @@ public final class ConnectionPoolConfiguration {
     @Nullable
     private final String validationQuery;
 
-    private final Consumer<PoolBuilder<Connection>> customizer;
+    private final Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer;
 
     private final PoolMetricsRecorder metricsRecorder;
 
@@ -60,7 +61,7 @@ public final class ConnectionPoolConfiguration {
 
     private ConnectionPoolConfiguration(ConnectionFactory connectionFactory, @Nullable String name, Duration maxIdleTime,
                                         int initialSize, int maxSize, @Nullable String validationQuery, Duration maxCreateConnectionTime,
-                                        Duration maxAcquireTime, Duration maxLifeTime, Consumer<PoolBuilder<Connection>> customizer,
+                                        Duration maxAcquireTime, Duration maxLifeTime, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
                                         PoolMetricsRecorder metricsRecorder, boolean registerJmx) {
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.name = name;
@@ -124,7 +125,7 @@ public final class ConnectionPoolConfiguration {
         return this.maxLifeTime;
     }
 
-    Consumer<PoolBuilder<Connection>> getCustomizer() {
+    Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> getCustomizer() {
         return this.customizer;
     }
 
@@ -157,7 +158,7 @@ public final class ConnectionPoolConfiguration {
 
         private Duration maxLifeTime = Duration.ZERO;  // ZERO indicates no-lifetime
 
-        private Consumer<PoolBuilder<Connection>> customizer = poolBuilder -> {
+        private Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer = poolBuilder -> {
         };  // no-op
 
         @Nullable
@@ -293,7 +294,7 @@ public final class ConnectionPoolConfiguration {
          * @return this {@link Builder}
          * @throws IllegalArgumentException if {@code customizer} is {@code null}
          */
-        public Builder customizer(Consumer<PoolBuilder<Connection>> customizer) {
+        public Builder customizer(Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer) {
             this.customizer = Assert.requireNonNull(customizer, "PoolBuilder customizer must not be null");
             return this;
         }
