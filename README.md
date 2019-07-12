@@ -47,13 +47,15 @@ Configuration of the `ConnectionPool` can be accomplished in two ways:
 ```java
 ConnectionFactory connectionFactory = ConnectionFactories.get(ConnectionFactoryOptions.builder()
    .option(DRIVER, "pool")
-   .option(PROTOCOL, "…") // driver identifier, PROTOCOL is delegated as DRIVER by the pool.
+   .option(PROTOCOL, "h2") // driver identifier, PROTOCOL is delegated as DRIVER by the pool.
    .option(HOST, "…")
    .option(PORT, "…") 
    .option(USER, "…")
    .option(PASSWORD, "…")
    .option(DATABASE, "…")
    .build());
+
+The delegated `DRIVER` (via `PROTOCOL`) above refers to the r2dbc-driver, currently one of `h2`, `postgresql`, `mssql`.
 
 Publisher<? extends Connection> connectionPublisher = connectionFactory.create();
 
