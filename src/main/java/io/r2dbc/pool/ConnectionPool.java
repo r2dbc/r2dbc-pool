@@ -220,6 +220,16 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         return this.factory;
     }
 
+    @Override
+    public String toString() {
+        StringBuffer sb = new StringBuffer();
+        sb.append(getClass().getSimpleName());
+        sb.append("[");
+        sb.append(this.factory.getMetadata().getName());
+        sb.append("]");
+        return sb.toString();
+    }
+
     /**
      * Returns {@link PoolMetrics} if available.
      *

@@ -646,6 +646,21 @@ final class ConnectionPoolUnitTests {
         verify(connectionMock, times(10)).close();
     }
 
+    @Test
+    void shouldRenderToString() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        ConnectionFactoryMetadata metadataMock = mock(ConnectionFactoryMetadata.class);
+        when(connectionFactoryMock.create()).thenReturn(Mono.empty());
+        when(connectionFactoryMock.getMetadata()).thenReturn(metadataMock);
+        when(metadataMock.getName()).thenReturn("H2");
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        assertThat(pool).hasToString("ConnectionPool[H2]");
+    }
+
     private ConnectionPool createConnectionPoolForDisposeTest(Connection connectionMock) {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
 
