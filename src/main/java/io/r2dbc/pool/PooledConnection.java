@@ -40,7 +40,7 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
 
     private volatile boolean closed = false;
 
-    private volatile boolean autoCommit = true;
+    private volatile boolean inTransaction = false;
 
     PooledConnection(PooledRef<Connection> ref) {
         this.ref = ref;
@@ -50,7 +50,7 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     @Override
     public Mono<Void> beginTransaction() {
         assertNotClosed();
-        return Mono.from(this.connection.beginTransaction()).doOnSubscribe(ignore -> this.autoCommit = false);
+        return Mono.from(this.connection.beginTransaction()).doOnSubscribe(ignore -> this.inTransaction = true);
     }
 
     @Override
@@ -60,18 +60,18 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
         return Mono.defer(() -> {
 
             Mono<Void> cleanup = Mono.empty();
-            if (!this.autoCommit) {
+            if (this.inTransaction) {
                 cleanup = rollbackTransaction().onErrorResume(throwable -> Mono.empty()).then();
             }
 
-            return cleanup.doOnSubscribe(ignore -> this.closed = true).then(ref.release());
+            return cleanup.doOnSubscribe(ignore -> this.closed = true).then(this.ref.release());
         });
     }
 
     @Override
     public Mono<Void> commitTransaction() {
         assertNotClosed();
-        return Mono.from(this.connection.commitTransaction()).doOnSubscribe(ignore -> this.autoCommit = false);
+        return Mono.from(this.connection.commitTransaction()).doOnSubscribe(ignore -> this.inTransaction = false);
     }
 
     @Override
@@ -100,12 +100,12 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
 
     @Override
     public Mono<Void> rollbackTransaction() {
-        return Mono.from(this.connection.rollbackTransaction()).doOnSubscribe(ignore -> this.autoCommit = false);
+        return Mono.from(this.connection.rollbackTransaction()).doOnSubscribe(ignore -> this.inTransaction = false);
     }
 
     @Override
     public Mono<Void> rollbackTransactionToSavepoint(String s) {
-        return Mono.from(this.connection.rollbackTransactionToSavepoint(s)).doOnSubscribe(ignore -> this.autoCommit = false);
+        return Mono.from(this.connection.rollbackTransactionToSavepoint(s));
     }
 
     @Override
@@ -123,5 +123,15 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
         if (this.closed) {
             throw new IllegalStateException("The connection is closed");
         }
+    }
+
+    @Override
+    public String toString() {
+        StringBuffer sb = new StringBuffer();
+        sb.append(getClass().getSimpleName());
+        sb.append("[");
+        sb.append(this.connection.toString());
+        sb.append("]");
+        return sb.toString();
     }
 }
