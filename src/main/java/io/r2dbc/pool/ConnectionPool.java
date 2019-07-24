@@ -79,6 +79,16 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         }
     }
 
+    /**
+     * Warms up the {@link ConnectionPool}, if needed. This instructs the pool to check for a minimum size and allocate
+     * necessary connections when the minimum is not reached.
+     *
+     * @return a cold {@link Mono} that triggers resource warmup and emits the number of warmed up resources.
+     */
+    public Mono<Integer> warmup() {
+        return this.connectionPool.warmup();
+    }
+
     private InstrumentedPool<Connection> createConnectionPool(ConnectionPoolConfiguration configuration) {
 
         ConnectionFactory factory = configuration.getConnectionFactory();
@@ -115,13 +125,13 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             .destroyHandler(Connection::close)
             .sizeMax(Runtime.getRuntime().availableProcessors());
 
-        builder.initialSize(initialSize);
-
         if (maxSize == -1) {
             builder.sizeUnbounded();
         } else {
             builder.sizeMax(maxSize);
         }
+
+        builder.sizeMin(configuration.getInitialSize());
 
         if (validationQuery != null) {
             builder.releaseHandler(connection -> {

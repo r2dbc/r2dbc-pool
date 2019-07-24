@@ -149,7 +149,7 @@ final class ConnectionPoolUnitTests {
         Connection connectionMock = mock(Connection.class);
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnNext(it -> creations.incrementAndGet()));
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).customizer(connectionPoolBuilder -> connectionPoolBuilder.initialSize(2)).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).customizer(connectionPoolBuilder -> connectionPoolBuilder.sizeMin(2)).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         pool.create().as(StepVerifier::create).consumeNextWith(actual -> {
@@ -275,6 +275,11 @@ final class ConnectionPoolUnitTests {
             .maxAcquireTime(Duration.ofMillis(10))
             .build();
         ConnectionPool pool = new ConnectionPool(configuration);
+
+        pool.warmup()
+            .as(StepVerifier::create)
+            .expectNext(1)
+            .verifyComplete();
 
         // When initial size of the pool is non-zero, even though creating connection is slow,
         // once connection is in pool, acquiring a connection from pool is fast.
@@ -494,6 +499,11 @@ final class ConnectionPoolUnitTests {
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
+        pool.warmup()
+            .as(StepVerifier::create)
+            .expectNext(10)
+            .verifyComplete();
+
         assertThat(pool.getMetrics()).isPresent().hasValueSatisfying(actual -> {
 
             assertThat(actual.acquiredSize()).isZero();
@@ -595,6 +605,10 @@ final class ConnectionPoolUnitTests {
 
         Connection connectionMock = mock(Connection.class);
         ConnectionPool pool = createConnectionPoolForDisposeTest(connectionMock);
+        pool.warmup()
+            .as(StepVerifier::create)
+            .expectNext(10)
+            .verifyComplete();
 
         IllegalArgumentException iae = new IllegalArgumentException();
 
@@ -614,6 +628,11 @@ final class ConnectionPoolUnitTests {
 
         Connection connectionMock = mock(Connection.class);
         ConnectionPool pool = createConnectionPoolForDisposeTest(connectionMock);
+
+        pool.warmup()
+            .as(StepVerifier::create)
+            .expectNext(10)
+            .verifyComplete();
 
         IllegalArgumentException iae = new IllegalArgumentException();
 
@@ -636,6 +655,12 @@ final class ConnectionPoolUnitTests {
 
         Connection connectionMock = mock(Connection.class);
         ConnectionPool pool = createConnectionPoolForDisposeTest(connectionMock);
+
+        pool.warmup()
+            .as(StepVerifier::create)
+            .expectNext(10)
+            .verifyComplete();
+
         pool.close();
 
         addDestroyHandler(pool, () -> {
