@@ -350,7 +350,7 @@ final class ConnectionPoolUnitTests {
     @Test
     void shouldConsiderMaxIdleTime() {
         DelayClock delayClock = new DelayClock();
-        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder(delayClock);
+        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
         MockConnection firstConnection = MockConnection.empty();
         MockConnection secondConnection = MockConnection.empty();
@@ -358,6 +358,7 @@ final class ConnectionPoolUnitTests {
         CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .clock(delayClock)
             .initialSize(0)
             .metricsRecorder(metricsRecorder)
             .maxIdleTime(Duration.ofDays(2))  // set idle to 2 days
@@ -382,13 +383,14 @@ final class ConnectionPoolUnitTests {
     @Test
     void shouldConsiderMaxIdleTimeWithDefault() {
         DelayClock delayClock = new DelayClock();
-        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder(delayClock);
+        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
         MockConnection firstConnection = MockConnection.empty();
         MockConnection secondConnection = MockConnection.empty();
         CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .clock(delayClock)
             .initialSize(0)
             .metricsRecorder(metricsRecorder)
             .build();
@@ -430,7 +432,7 @@ final class ConnectionPoolUnitTests {
     void shouldConsiderMaxLifetime() {
 
         DelayClock delayClock = new DelayClock();
-        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder(delayClock);
+        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
         MockConnection firstConnection = MockConnection.empty();
         MockConnection secondConnection = MockConnection.empty();
@@ -438,6 +440,7 @@ final class ConnectionPoolUnitTests {
         CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .clock(delayClock)
             .initialSize(0)
             .metricsRecorder(metricsRecorder)
             .maxLifeTime(Duration.ofDays(1))
@@ -465,12 +468,13 @@ final class ConnectionPoolUnitTests {
     void shouldConsiderMaxLifetimeWithDefault() {
 
         DelayClock delayClock = new DelayClock();
-        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder(delayClock);
+        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
         MockConnection firstConnection = MockConnection.empty();
         CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .clock(delayClock)
             .initialSize(0)
             .metricsRecorder(metricsRecorder)
             .maxIdleTime(Duration.ZERO)  // do not evict by idle time
@@ -785,5 +789,4 @@ final class ConnectionPoolUnitTests {
             return this.createCounter.get();
         }
     }
-
 }

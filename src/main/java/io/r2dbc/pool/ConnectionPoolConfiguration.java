@@ -23,6 +23,7 @@ import reactor.pool.PoolConfig;
 import reactor.pool.PoolMetricsRecorder;
 import reactor.util.annotation.Nullable;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.function.Consumer;
 
@@ -35,6 +36,8 @@ import java.util.function.Consumer;
 public final class ConnectionPoolConfiguration {
 
     private final ConnectionFactory connectionFactory;
+
+    private final Clock clock;
 
     private final Duration maxIdleTime;
 
@@ -59,11 +62,12 @@ public final class ConnectionPoolConfiguration {
 
     private final String name;
 
-    private ConnectionPoolConfiguration(ConnectionFactory connectionFactory, @Nullable String name, Duration maxIdleTime,
+    private ConnectionPoolConfiguration(ConnectionFactory connectionFactory, Clock clock, @Nullable String name, Duration maxIdleTime,
                                         int initialSize, int maxSize, @Nullable String validationQuery, Duration maxCreateConnectionTime,
                                         Duration maxAcquireTime, Duration maxLifeTime, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
                                         PoolMetricsRecorder metricsRecorder, boolean registerJmx) {
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
+        this.clock = clock;
         this.name = name;
         this.initialSize = initialSize;
         this.maxSize = maxSize;
@@ -89,6 +93,10 @@ public final class ConnectionPoolConfiguration {
 
     ConnectionFactory getConnectionFactory() {
         return connectionFactory;
+    }
+
+    Clock getClock() {
+        return clock;
     }
 
     @Nullable
@@ -146,6 +154,8 @@ public final class ConnectionPoolConfiguration {
 
         private final ConnectionFactory connectionFactory;
 
+        private Clock clock = Clock.systemUTC();
+
         private int initialSize = 10;
 
         private int maxSize = 10;
@@ -173,6 +183,21 @@ public final class ConnectionPoolConfiguration {
 
         private Builder(ConnectionFactory connectionFactory) {
             this.connectionFactory = connectionFactory;
+        }
+
+        /**
+         * Configure the {@link Clock} used for allocation and eviction timing.
+         *
+         * @param clock the {@link Clock} to use.
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code clock} is null.
+         */
+        public Builder clock(Clock clock) {
+            if (clock == null) {
+                throw new IllegalArgumentException("Clock must not be null");
+            }
+            this.clock = clock;
+            return this;
         }
 
         /**
@@ -342,7 +367,7 @@ public final class ConnectionPoolConfiguration {
          */
         public ConnectionPoolConfiguration build() {
             validate();
-            return new ConnectionPoolConfiguration(this.connectionFactory, this.name, this.maxIdleTime,
+            return new ConnectionPoolConfiguration(this.connectionFactory, this.clock, this.name, this.maxIdleTime,
                 this.initialSize, this.maxSize, this.validationQuery, this.maxCreateConnectionTime,
                 this.maxAcquireTime, this.maxLifeTime, this.customizer, this.metricsRecorder, this.registerJmx);
         }
@@ -357,6 +382,7 @@ public final class ConnectionPoolConfiguration {
         public String toString() {
             return "Builder{" +
                 "connectionFactory='" + this.connectionFactory + '\'' +
+                ", clock='" + this.clock + '\'' +
                 ", name='" + this.name + '\'' +
                 ", maxIdleTime='" + this.maxIdleTime + '\'' +
                 ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +

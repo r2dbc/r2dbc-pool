@@ -120,6 +120,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         };
 
         PoolBuilder<Connection, PoolConfig<Connection>> builder = PoolBuilder.from(allocator)
+            .clock(configuration.getClock())
             .metricsRecorder(metricsRecorder)
             .evictionPredicate(evictionPredicate)
             .destroyHandler(Connection::close)
