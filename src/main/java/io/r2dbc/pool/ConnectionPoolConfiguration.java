@@ -92,33 +92,33 @@ public final class ConnectionPoolConfiguration {
     }
 
     ConnectionFactory getConnectionFactory() {
-        return connectionFactory;
+        return this.connectionFactory;
     }
 
     Clock getClock() {
-        return clock;
+        return this.clock;
     }
 
     @Nullable
     String getName() {
-        return name;
+        return this.name;
     }
 
     Duration getMaxIdleTime() {
-        return maxIdleTime;
+        return this.maxIdleTime;
     }
 
     int getInitialSize() {
-        return initialSize;
+        return this.initialSize;
     }
 
     int getMaxSize() {
-        return maxSize;
+        return this.maxSize;
     }
 
     @Nullable
     String getValidationQuery() {
-        return validationQuery;
+        return this.validationQuery;
     }
 
     Duration getMaxCreateConnectionTime() {
