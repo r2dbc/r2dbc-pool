@@ -129,10 +129,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         if (maxSize == -1) {
             builder.sizeUnbounded();
         } else {
-            builder.sizeMax(maxSize);
+            builder.sizeBetween(initialSize, maxSize);
         }
-
-        builder.sizeMin(configuration.getInitialSize());
 
         if (validationQuery != null) {
             builder.releaseHandler(connection -> {
