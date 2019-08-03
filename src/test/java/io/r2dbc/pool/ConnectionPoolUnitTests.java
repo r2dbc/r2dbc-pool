@@ -149,7 +149,7 @@ final class ConnectionPoolUnitTests {
         Connection connectionMock = mock(Connection.class);
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnNext(it -> creations.incrementAndGet()));
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).customizer(connectionPoolBuilder -> connectionPoolBuilder.sizeMin(2)).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).customizer(connectionPoolBuilder -> connectionPoolBuilder.sizeBetween(2,10)).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         pool.create().as(StepVerifier::create).consumeNextWith(actual -> {
