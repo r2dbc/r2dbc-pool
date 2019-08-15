@@ -62,6 +62,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     private final List<Runnable> destroyHandlers = new ArrayList<>();
 
+    private final Optional<PoolMetrics> poolMetrics;
+
     /**
      * Creates a new connection factory.
      *
@@ -72,6 +74,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         this.connectionPool = createConnectionPool(Assert.requireNonNull(configuration, "ConnectionPoolConfiguration must not be null"));
         this.factory = configuration.getConnectionFactory();
         this.maxAcquireTime = configuration.getMaxAcquireTime();
+        this.poolMetrics = Optional.ofNullable(this.connectionPool.metrics()).map(PoolMetricsWrapper::new);
 
         if (configuration.isRegisterJmx()) {
             getMetrics().ifPresent(poolMetrics -> {
@@ -258,7 +261,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
      * @return the optional pool metrics.
      */
     public Optional<PoolMetrics> getMetrics() {
-        return Optional.of(this.connectionPool.metrics()).map(PoolMetricsWrapper::new);
+        return this.poolMetrics;
     }
 
     private void registerToJmx(PoolMetrics poolMetrics, String name) {
