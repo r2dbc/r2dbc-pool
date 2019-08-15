@@ -40,6 +40,12 @@ public final class ConnectionPoolConfiguration {
 
     private final Clock clock;
 
+    private final Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer;
+
+    private final int initialSize;
+
+    private final int maxSize;
+
     private final Duration maxIdleTime;
 
     private final Duration maxCreateConnectionTime;
@@ -48,37 +54,32 @@ public final class ConnectionPoolConfiguration {
 
     private final Duration maxLifeTime;
 
-    private final int initialSize;
-
-    private final int maxSize;
-
-    private final Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer;
-
     private final PoolMetricsRecorder metricsRecorder;
 
-    private final boolean registerJmx;
-
+    @Nullable
     private final String name;
+
+    private final boolean registerJmx;
 
     private final ValidationDepth validationDepth;
 
     @Nullable
     private final String validationQuery;
 
-    private ConnectionPoolConfiguration(ConnectionFactory connectionFactory, Clock clock, @Nullable String name, Duration maxIdleTime,
-                                        int initialSize, int maxSize, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime, Consumer<PoolBuilder<Connection, ?
-        extends PoolConfig<? extends Connection>>> customizer, PoolMetricsRecorder metricsRecorder, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
+    public ConnectionPoolConfiguration(ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
+                                       int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
+                                       PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.clock = clock;
-        this.name = name;
+        this.customizer = customizer;
         this.initialSize = initialSize;
         this.maxSize = maxSize;
         this.maxIdleTime = maxIdleTime;
         this.maxCreateConnectionTime = maxCreateConnectionTime;
         this.maxAcquireTime = maxAcquireTime;
         this.maxLifeTime = maxLifeTime;
-        this.customizer = customizer;
         this.metricsRecorder = metricsRecorder;
+        this.name = name;
         this.registerJmx = registerJmx;
         this.validationDepth = validationDepth;
         this.validationQuery = validationQuery;
@@ -102,9 +103,8 @@ public final class ConnectionPoolConfiguration {
         return this.clock;
     }
 
-    @Nullable
-    String getName() {
-        return this.name;
+    Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> getCustomizer() {
+        return this.customizer;
     }
 
     Duration getMaxIdleTime() {
@@ -131,12 +131,13 @@ public final class ConnectionPoolConfiguration {
         return this.maxLifeTime;
     }
 
-    Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> getCustomizer() {
-        return this.customizer;
-    }
-
     PoolMetricsRecorder getMetricsRecorder() {
         return this.metricsRecorder;
+    }
+
+    @Nullable
+    String getName() {
+        return this.name;
     }
 
     boolean isRegisterJmx() {
@@ -163,6 +164,9 @@ public final class ConnectionPoolConfiguration {
 
         private Clock clock = Clock.systemUTC();
 
+        private Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer = poolBuilder -> {
+        };  // no-op
+
         private int initialSize = 10;
 
         private int maxSize = 10;
@@ -175,15 +179,12 @@ public final class ConnectionPoolConfiguration {
 
         private Duration maxLifeTime = Duration.ZERO;  // ZERO indicates no-lifetime
 
-        private Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer = poolBuilder -> {
-        };  // no-op
-
         private PoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
-
-        private boolean registerJmx;
 
         @Nullable
         private String name;
+
+        private boolean registerJmx;
 
         @Nullable
         private String validationQuery;
@@ -206,6 +207,18 @@ public final class ConnectionPoolConfiguration {
                 throw new IllegalArgumentException("Clock must not be null");
             }
             this.clock = clock;
+            return this;
+        }
+
+        /**
+         * Configure a customizer for {@link PoolBuilder} that constructs the {@link Connection} pool.
+         *
+         * @param customizer customizer for {@link PoolBuilder} that creates the {@link Connection} pool, must not be {@code null}.
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code customizer} is {@code null}
+         */
+        public Builder customizer(Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer) {
+            this.customizer = Assert.requireNonNull(customizer, "PoolBuilder customizer must not be null");
             return this;
         }
 
@@ -310,18 +323,6 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
-         * Configure a customizer for {@link PoolBuilder} that constructs the {@link Connection} pool.
-         *
-         * @param customizer customizer for {@link PoolBuilder} that creates the {@link Connection} pool, must not be {@code null}.
-         * @return this {@link Builder}
-         * @throws IllegalArgumentException if {@code customizer} is {@code null}
-         */
-        public Builder customizer(Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer) {
-            this.customizer = Assert.requireNonNull(customizer, "PoolBuilder customizer must not be null");
-            return this;
-        }
-
-        /**
          * Configure {@link PoolMetricsRecorder} to calculate elapsed time and instrumentation data
          *
          * @param recorder the {@link PoolMetricsRecorder}
@@ -334,17 +335,6 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
-         * Configure whether to register to JMX. Defaults to {@code false}.
-         *
-         * @param registerJmx register the pool to JMX
-         * @return this {@link Builder}
-         */
-        public Builder registerJmx(boolean registerJmx) {
-            this.registerJmx = registerJmx;
-            return this;
-        }
-
-        /**
          * Configure the name of the connection pool.
          *
          * @param name pool name
@@ -353,6 +343,17 @@ public final class ConnectionPoolConfiguration {
          */
         public Builder name(String name) {
             this.name = Assert.requireNonNull(name, "name must not be null");
+            return this;
+        }
+
+        /**
+         * Configure whether to register to JMX. Defaults to {@code false}.
+         *
+         * @param registerJmx register the pool to JMX
+         * @return this {@link Builder}
+         */
+        public Builder registerJmx(boolean registerJmx) {
+            this.registerJmx = registerJmx;
             return this;
         }
 
@@ -388,9 +389,8 @@ public final class ConnectionPoolConfiguration {
          */
         public ConnectionPoolConfiguration build() {
             validate();
-            return new ConnectionPoolConfiguration(this.connectionFactory, this.clock, this.name, this.maxIdleTime,
-                this.initialSize, this.maxSize, this.maxCreateConnectionTime, this.maxAcquireTime, this.maxLifeTime, this.customizer, this.metricsRecorder, this.registerJmx, this.validationDepth,
-                this.validationQuery
+            return new ConnectionPoolConfiguration(this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize, this.maxIdleTime, this.maxCreateConnectionTime,
+                this.maxAcquireTime, this.maxLifeTime, this.metricsRecorder, this.name, this.registerJmx, this.validationDepth, this.validationQuery
             );
         }
 
@@ -405,17 +405,17 @@ public final class ConnectionPoolConfiguration {
             return "Builder{" +
                 "connectionFactory='" + this.connectionFactory + '\'' +
                 ", clock='" + this.clock + '\'' +
-                ", name='" + this.name + '\'' +
+                ", initialSize='" + this.initialSize + '\'' +
+                ", maxSize='" + this.maxSize + '\'' +
                 ", maxIdleTime='" + this.maxIdleTime + '\'' +
                 ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +
                 ", maxAcquireTime='" + this.maxAcquireTime + '\'' +
                 ", maxLifeTime='" + this.maxLifeTime + '\'' +
-                ", initialSize='" + this.initialSize + '\'' +
-                ", maxSize='" + this.maxSize + '\'' +
                 ", metricsRecorder='" + this.metricsRecorder + '\'' +
+                ", name='" + this.name + '\'' +
                 ", registerJmx='" + this.registerJmx + '\'' +
-                ", validationQuery='" + this.validationQuery + '\'' +
                 ", validationDepth='" + this.validationDepth + '\'' +
+                ", validationQuery='" + this.validationQuery + '\'' +
                 '}';
         }
     }
