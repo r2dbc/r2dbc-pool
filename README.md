@@ -70,6 +70,7 @@ Supported Connection Factory Discovery options:
 | `driver`          | Must be `pool`
 | `protocol`        | Driver identifier. The value is propagated by the pool to the `driver` property.
 | `maxSize`         | Maximum pool size. Defaults to `10`.
+| `validationDepth` | Validation depth used to validate an R2DBC connection. Defaults to `LOCAL`.
 | `validationQuery` | Query that will be executed just before a connection is given to you from the pool to validate that the connection to the database is still alive.
 
 All other properties are driver-specific
@@ -79,7 +80,6 @@ All other properties are driver-specific
 ConnectionFactory connectionFactory = …;
 
 ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
-   .validationQuery("SELECT 1")
    .maxIdleTime(Duration.ofMillis(1000))
    .maxSize(20)
    .build();

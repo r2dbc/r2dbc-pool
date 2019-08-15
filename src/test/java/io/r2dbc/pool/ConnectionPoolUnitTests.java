@@ -19,6 +19,7 @@ package io.r2dbc.pool;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
+import io.r2dbc.spi.ValidationDepth;
 import io.r2dbc.spi.Wrapped;
 import io.r2dbc.spi.test.MockConnection;
 import org.junit.jupiter.api.AfterEach;
@@ -48,6 +49,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static java.lang.String.format;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -149,7 +151,7 @@ final class ConnectionPoolUnitTests {
         Connection connectionMock = mock(Connection.class);
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnNext(it -> creations.incrementAndGet()));
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).customizer(connectionPoolBuilder -> connectionPoolBuilder.sizeBetween(2,10)).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).customizer(connectionPoolBuilder -> connectionPoolBuilder.sizeBetween(2, 10)).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         pool.create().as(StepVerifier::create).consumeNextWith(actual -> {
@@ -169,6 +171,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
         AtomicLong createCounter = new AtomicLong();
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnSubscribe(ignore -> createCounter.incrementAndGet()));
 
@@ -298,6 +301,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
         AtomicInteger counter = new AtomicInteger();
 
@@ -352,8 +356,8 @@ final class ConnectionPoolUnitTests {
         DelayClock delayClock = new DelayClock();
         SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
-        MockConnection firstConnection = MockConnection.empty();
-        MockConnection secondConnection = MockConnection.empty();
+        MockConnection firstConnection = MockConnection.builder().valid(true).build();
+        MockConnection secondConnection = MockConnection.builder().valid(true).build();
 
         CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
 
@@ -385,8 +389,8 @@ final class ConnectionPoolUnitTests {
         DelayClock delayClock = new DelayClock();
         SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
-        MockConnection firstConnection = MockConnection.empty();
-        MockConnection secondConnection = MockConnection.empty();
+        MockConnection firstConnection = MockConnection.builder().valid(true).build();
+        MockConnection secondConnection = MockConnection.builder().valid(true).build();
         CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
@@ -411,8 +415,8 @@ final class ConnectionPoolUnitTests {
     @Test
     void shouldConsiderMaxIdleTimeWithZero() {
 
-        MockConnection firstConnection = MockConnection.empty();
-        MockConnection secondConnection = MockConnection.empty();
+        MockConnection firstConnection = MockConnection.builder().valid(true).build();
+        MockConnection secondConnection = MockConnection.builder().valid(true).build();
         CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
@@ -434,8 +438,8 @@ final class ConnectionPoolUnitTests {
         DelayClock delayClock = new DelayClock();
         SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
-        MockConnection firstConnection = MockConnection.empty();
-        MockConnection secondConnection = MockConnection.empty();
+        MockConnection firstConnection = MockConnection.builder().valid(true).build();
+        MockConnection secondConnection = MockConnection.builder().valid(true).build();
 
         CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
 
@@ -470,7 +474,7 @@ final class ConnectionPoolUnitTests {
         DelayClock delayClock = new DelayClock();
         SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
-        MockConnection firstConnection = MockConnection.empty();
+        MockConnection firstConnection = MockConnection.builder().valid(true).build();
         CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
@@ -496,6 +500,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
         // acquire time should also consider the time to obtain an actual connection
         when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
@@ -673,6 +678,31 @@ final class ConnectionPoolUnitTests {
 
         pool.disposeLater().as(StepVerifier::create).verifyComplete();
         verify(connectionMock, times(10)).close();
+    }
+
+    @Test
+    void shouldDropConnectionOnFailedValidation() {
+
+        AtomicInteger subscriptions = new AtomicInteger();
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock).doOnSubscribe(ignore -> subscriptions.incrementAndGet()));
+        when(connectionMock.close()).thenReturn(Mono.empty());
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .initialSize(0)
+            .maxSize(2)
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.just(false), Mono.empty());
+
+        pool.create().flatMapMany(Connection::close).as(StepVerifier::create).verifyError();
+        pool.create().flatMapMany(Connection::close).as(StepVerifier::create).verifyComplete();
+
+        assertThat(subscriptions).hasValue(2);
     }
 
     @Test

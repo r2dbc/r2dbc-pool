@@ -18,6 +18,7 @@ package io.r2dbc.pool;
 
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
+import io.r2dbc.spi.ValidationDepth;
 import reactor.pool.PoolBuilder;
 import reactor.pool.PoolConfig;
 import reactor.pool.PoolMetricsRecorder;
@@ -51,9 +52,6 @@ public final class ConnectionPoolConfiguration {
 
     private final int maxSize;
 
-    @Nullable
-    private final String validationQuery;
-
     private final Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer;
 
     private final PoolMetricsRecorder metricsRecorder;
@@ -62,23 +60,28 @@ public final class ConnectionPoolConfiguration {
 
     private final String name;
 
+    private final ValidationDepth validationDepth;
+
+    @Nullable
+    private final String validationQuery;
+
     private ConnectionPoolConfiguration(ConnectionFactory connectionFactory, Clock clock, @Nullable String name, Duration maxIdleTime,
-                                        int initialSize, int maxSize, @Nullable String validationQuery, Duration maxCreateConnectionTime,
-                                        Duration maxAcquireTime, Duration maxLifeTime, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
-                                        PoolMetricsRecorder metricsRecorder, boolean registerJmx) {
+                                        int initialSize, int maxSize, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime, Consumer<PoolBuilder<Connection, ?
+        extends PoolConfig<? extends Connection>>> customizer, PoolMetricsRecorder metricsRecorder, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.clock = clock;
         this.name = name;
         this.initialSize = initialSize;
         this.maxSize = maxSize;
         this.maxIdleTime = maxIdleTime;
-        this.validationQuery = validationQuery;
         this.maxCreateConnectionTime = maxCreateConnectionTime;
         this.maxAcquireTime = maxAcquireTime;
         this.maxLifeTime = maxLifeTime;
         this.customizer = customizer;
         this.metricsRecorder = metricsRecorder;
         this.registerJmx = registerJmx;
+        this.validationDepth = validationDepth;
+        this.validationQuery = validationQuery;
     }
 
     /**
@@ -116,11 +119,6 @@ public final class ConnectionPoolConfiguration {
         return this.maxSize;
     }
 
-    @Nullable
-    String getValidationQuery() {
-        return this.validationQuery;
-    }
-
     Duration getMaxCreateConnectionTime() {
         return this.maxCreateConnectionTime;
     }
@@ -143,6 +141,15 @@ public final class ConnectionPoolConfiguration {
 
     boolean isRegisterJmx() {
         return this.registerJmx;
+    }
+
+    ValidationDepth getValidationDepth() {
+        return this.validationDepth;
+    }
+
+    @Nullable
+    String getValidationQuery() {
+        return this.validationQuery;
     }
 
     /**
@@ -171,15 +178,17 @@ public final class ConnectionPoolConfiguration {
         private Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer = poolBuilder -> {
         };  // no-op
 
-        @Nullable
-        private String validationQuery;
-
         private PoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
         private boolean registerJmx;
 
         @Nullable
         private String name;
+
+        @Nullable
+        private String validationQuery;
+
+        private ValidationDepth validationDepth = ValidationDepth.LOCAL;
 
         private Builder(ConnectionFactory connectionFactory) {
             this.connectionFactory = connectionFactory;
@@ -301,18 +310,6 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
-         * Configure a validation query.
-         *
-         * @param validationQuery the validation query to run before returning a {@link Connection} from the pool, must not be {@code null}.
-         * @return this {@link Builder}
-         * @throws IllegalArgumentException if {@code validationQuery} is {@code null}
-         */
-        public Builder validationQuery(String validationQuery) {
-            this.validationQuery = Assert.requireNonNull(validationQuery, "ValidationQuery must not be null");
-            return this;
-        }
-
-        /**
          * Configure a customizer for {@link PoolBuilder} that constructs the {@link Connection} pool.
          *
          * @param customizer customizer for {@link PoolBuilder} that creates the {@link Connection} pool, must not be {@code null}.
@@ -360,6 +357,30 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
+         * Configure validation depth for {@link Connection#validate(ValidationDepth) connection validation}.
+         *
+         * @param validationDepth the depth of validation, must not be {@literal null}
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code validationQuery} is {@code null}
+         */
+        public Builder validationDepth(ValidationDepth validationDepth) {
+            this.validationDepth = Assert.requireNonNull(validationDepth, "ValidationQuery must not be null");
+            return this;
+        }
+
+        /**
+         * Configure a validation query. When a validation query is used, then {@link Connection#validate(ValidationDepth)} is not used.
+         *
+         * @param validationQuery the validation query to run before returning a {@link Connection} from the pool, must not be {@code null}.
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code validationQuery} is {@code null}
+         */
+        public Builder validationQuery(String validationQuery) {
+            this.validationQuery = Assert.requireNonNull(validationQuery, "ValidationQuery must not be null");
+            return this;
+        }
+
+        /**
          * Returns a configured {@link ConnectionPoolConfiguration}.
          *
          * @return a configured {@link ConnectionPoolConfiguration}
@@ -368,8 +389,9 @@ public final class ConnectionPoolConfiguration {
         public ConnectionPoolConfiguration build() {
             validate();
             return new ConnectionPoolConfiguration(this.connectionFactory, this.clock, this.name, this.maxIdleTime,
-                this.initialSize, this.maxSize, this.validationQuery, this.maxCreateConnectionTime,
-                this.maxAcquireTime, this.maxLifeTime, this.customizer, this.metricsRecorder, this.registerJmx);
+                this.initialSize, this.maxSize, this.maxCreateConnectionTime, this.maxAcquireTime, this.maxLifeTime, this.customizer, this.metricsRecorder, this.registerJmx, this.validationDepth,
+                this.validationQuery
+            );
         }
 
         private void validate() {
@@ -390,9 +412,10 @@ public final class ConnectionPoolConfiguration {
                 ", maxLifeTime='" + this.maxLifeTime + '\'' +
                 ", initialSize='" + this.initialSize + '\'' +
                 ", maxSize='" + this.maxSize + '\'' +
-                ", validationQuery='" + this.validationQuery + '\'' +
                 ", metricsRecorder='" + this.metricsRecorder + '\'' +
                 ", registerJmx='" + this.registerJmx + '\'' +
+                ", validationQuery='" + this.validationQuery + '\'' +
+                ", validationDepth='" + this.validationDepth + '\'' +
                 '}';
         }
     }

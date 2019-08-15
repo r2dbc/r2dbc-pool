@@ -16,11 +16,20 @@
 
 package io.r2dbc.pool;
 
+import io.r2dbc.spi.Connection;
+import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryOptions;
+import io.r2dbc.spi.ValidationDepth;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Mono;
 
 import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link PoolingConnectionFactoryProvider}.
@@ -30,6 +39,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 final class PoolingConnectionFactoryProviderUnitTests {
 
     private final PoolingConnectionFactoryProvider provider = new PoolingConnectionFactoryProvider();
+
+    ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+
+    Connection connectionMock = mock(Connection.class);
+
+    @BeforeEach
+    @SuppressWarnings("unchecked")
+    void setUp() {
+
+        when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock));
+        MockConnectionFactoryProvider.setMockSupplier(() -> connectionFactoryMock);
+    }
+
+    @AfterEach
+    void tearDown() {
+        MockConnectionFactoryProvider.resetMockSupplier();
+    }
 
     @Test
     void doesNotSupportWithoutDriver() {
@@ -47,5 +73,16 @@ final class PoolingConnectionFactoryProviderUnitTests {
     @Test
     void returnsDriverIdentifier() {
         assertThat(this.provider.getDriver()).isEqualTo(PoolingConnectionFactoryProvider.POOLING_DRIVER);
+    }
+
+    @Test
+    void shouldApplyValidationDepth() {
+
+        ConnectionFactoryOptions options = ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?validationDepth=remote");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("validationDepth", ValidationDepth.REMOTE);
     }
 }

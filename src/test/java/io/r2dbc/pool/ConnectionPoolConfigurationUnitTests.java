@@ -17,6 +17,7 @@
 package io.r2dbc.pool;
 
 import io.r2dbc.spi.ConnectionFactory;
+import io.r2dbc.spi.ValidationDepth;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -68,6 +69,7 @@ final class ConnectionPoolConfigurationUnitTests {
             .hasFieldOrPropertyWithValue("connectionFactory", connectionFactoryMock)
             .hasFieldOrPropertyWithValue("name", null)
             .hasFieldOrPropertyWithValue("validationQuery", null)
+            .hasFieldOrPropertyWithValue("validationDepth", ValidationDepth.LOCAL)
             .hasFieldOrPropertyWithValue("maxIdleTime", Duration.ofMinutes(30))
             .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ZERO)
             .hasFieldOrPropertyWithValue("maxAcquireTime", Duration.ZERO)

@@ -19,6 +19,7 @@ package io.r2dbc.pool;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
+import io.r2dbc.spi.R2dbcNonTransientResourceException;
 import io.r2dbc.spi.Wrapped;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -132,9 +133,21 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             builder.sizeBetween(initialSize, maxSize);
         }
 
-        if (validationQuery != null) {
+        if (validationQuery != null && !validationQuery.isEmpty()) {
             builder.releaseHandler(connection -> {
                 return Flux.from(connection.createStatement(validationQuery).execute()).flatMap(it -> it.map((row, rowMetadata) -> Optional.ofNullable(row.get(0)))).then();
+            });
+        } else {
+            builder.releaseHandler(connection -> {
+                return Flux.from(connection.validate(configuration.getValidationDepth())).handle((state, sink) -> {
+
+                    if (state) {
+                        sink.complete();
+                        return;
+                    }
+
+                    sink.error(new R2dbcNonTransientResourceException("Connection validation failed"));
+                }).then();
             });
         }
 

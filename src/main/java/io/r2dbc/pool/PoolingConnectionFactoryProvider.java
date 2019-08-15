@@ -21,6 +21,9 @@ import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryOptions;
 import io.r2dbc.spi.ConnectionFactoryProvider;
 import io.r2dbc.spi.Option;
+import io.r2dbc.spi.ValidationDepth;
+
+import java.util.Locale;
 
 import static io.r2dbc.pool.ConnectionPoolConfiguration.Builder;
 import static io.r2dbc.pool.ConnectionPoolConfiguration.builder;
@@ -48,6 +51,11 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
      */
     public static final Option<String> VALIDATION_QUERY = Option.valueOf("validationQuery");
 
+    /**
+     * ValidationDepth {@link Option}.
+     */
+    public static final Option<ValidationDepth> VALIDATION_DEPTH = Option.valueOf("validationDepth");
+
     private static final String COLON = ":";
 
     /**
@@ -62,6 +70,11 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
      */
     @Override
     public ConnectionPool create(ConnectionFactoryOptions connectionFactoryOptions) {
+
+        return new ConnectionPool(buildConfiguration(connectionFactoryOptions));
+    }
+
+    static ConnectionPoolConfiguration buildConfiguration(ConnectionFactoryOptions connectionFactoryOptions) {
 
         String protocol = connectionFactoryOptions.getRequiredValue(ConnectionFactoryOptions.PROTOCOL);
         if (protocol.trim().length() == 0) {
@@ -106,7 +119,18 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
             builder.validationQuery(validationQuery);
         }
 
-        return new ConnectionPool(builder.build());
+        if (connectionFactoryOptions.hasOption(VALIDATION_DEPTH)) {
+
+            Object validationDepth = connectionFactoryOptions.getRequiredValue(VALIDATION_DEPTH);
+
+            if (validationDepth instanceof String) {
+                validationDepth = ValidationDepth.valueOf(((String) validationDepth).toUpperCase(Locale.ENGLISH));
+            }
+
+            builder.validationDepth((ValidationDepth) validationDepth);
+        }
+
+        return builder.build();
     }
 
     @Override

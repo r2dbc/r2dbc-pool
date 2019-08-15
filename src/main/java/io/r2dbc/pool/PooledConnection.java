@@ -20,6 +20,7 @@ import io.r2dbc.spi.Batch;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.IsolationLevel;
 import io.r2dbc.spi.Statement;
+import io.r2dbc.spi.ValidationDepth;
 import io.r2dbc.spi.Wrapped;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
@@ -28,7 +29,6 @@ import reactor.pool.PooledRef;
 /**
  * Pooled {@link Connection} implementation. Performs a cleanup on {@link #close()} if used transactionally.
  * <p>
- * TODO: Initially, connections are assumed to work in auto-commit mode. Do we need to inspect auto-commit and restore the auto-commit state?
  *
  * @author Mark Paluch
  */
@@ -117,6 +117,11 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     @Override
     public Connection unwrap() {
         return this.connection;
+    }
+
+    @Override
+    public Publisher<Boolean> validate(ValidationDepth validationDepth) {
+        return this.connection.validate(validationDepth);
     }
 
     private void assertNotClosed() {
