@@ -124,15 +124,13 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             .metricsRecorder(metricsRecorder)
             .evictionPredicate(evictionPredicate)
             .destroyHandler(Connection::close)
-            .sizeMax(Runtime.getRuntime().availableProcessors());
+            .sizeBetween(0, Runtime.getRuntime().availableProcessors());
 
-        if (maxSize == -1) {
-            builder.sizeUnbounded();
+        if (maxSize == -1 || initialSize > 0) {
+            builder.sizeBetween(Math.max(0, initialSize), maxSize == -1 ? Integer.MAX_VALUE : maxSize);
         } else {
-            builder.sizeMax(maxSize);
+            builder.sizeBetween(initialSize, maxSize);
         }
-
-        builder.sizeMin(configuration.getInitialSize());
 
         if (validationQuery != null) {
             builder.releaseHandler(connection -> {
