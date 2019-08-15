@@ -126,8 +126,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             .destroyHandler(Connection::close)
             .sizeBetween(0, Runtime.getRuntime().availableProcessors());
 
-        if (maxSize == -1) {
-            builder.sizeUnbounded();
+        if (maxSize == -1 || initialSize > 0) {
+            builder.sizeBetween(Math.max(0, initialSize), maxSize == -1 ? Integer.MAX_VALUE : maxSize);
         } else {
             builder.sizeBetween(initialSize, maxSize);
         }
