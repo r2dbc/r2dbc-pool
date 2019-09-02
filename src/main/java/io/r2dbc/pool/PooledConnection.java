@@ -93,6 +93,18 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     }
 
     @Override
+    public boolean isAutoCommit() {
+        assertNotClosed();
+        return this.connection.isAutoCommit();
+    }
+
+    @Override
+    public IsolationLevel getTransactionIsolationLevel() {
+        assertNotClosed();
+        return this.connection.getTransactionIsolationLevel();
+    }
+
+    @Override
     public Publisher<Void> releaseSavepoint(String s) {
         assertNotClosed();
         return this.connection.releaseSavepoint(s);
@@ -109,9 +121,15 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     }
 
     @Override
-    public Publisher<Void> setTransactionIsolationLevel(IsolationLevel isolationLevel) {
+    public Mono<Void> setAutoCommit(boolean autoCommit) {
         assertNotClosed();
-        return this.connection.setTransactionIsolationLevel(isolationLevel);
+        return Mono.from(this.connection.setAutoCommit(autoCommit));
+    }
+
+    @Override
+    public Mono<Void> setTransactionIsolationLevel(IsolationLevel isolationLevel) {
+        assertNotClosed();
+        return Mono.from(this.connection.setTransactionIsolationLevel(isolationLevel));
     }
 
     @Override
