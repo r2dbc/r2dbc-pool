@@ -18,6 +18,7 @@ package io.r2dbc.pool;
 
 import io.r2dbc.spi.Batch;
 import io.r2dbc.spi.Connection;
+import io.r2dbc.spi.ConnectionMetadata;
 import io.r2dbc.spi.IsolationLevel;
 import io.r2dbc.spi.Statement;
 import io.r2dbc.spi.ValidationDepth;
@@ -96,6 +97,12 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     public boolean isAutoCommit() {
         assertNotClosed();
         return this.connection.isAutoCommit();
+    }
+
+    @Override
+    public ConnectionMetadata getMetadata() {
+        assertNotClosed();
+        return this.connection.getMetadata();
     }
 
     @Override
