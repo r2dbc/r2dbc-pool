@@ -34,13 +34,13 @@
         <assertj.version>3.12.2</assertj.version>
         <java.version>1.8</java.version>
         <jsr305.version>3.0.2</jsr305.version>
-        <junit.version>5.4.2</junit.version>
+        <junit.version>5.5.2</junit.version>
         <logback.version>1.2.3</logback.version>
         <mockito.version>2.27.0</mockito.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <r2dbc-spi.version>${project.version}</r2dbc-spi.version>
-        <reactor.version>Dysprosium-RC1</reactor.version>
+        <reactor.version>Dysprosium-RELEASE</reactor.version>
         <slf4j.version>1.7.26</slf4j.version>
     </properties>
 
@@ -76,11 +76,6 @@
             <groupId>io.r2dbc</groupId>
             <artifactId>r2dbc-spi</artifactId>
             <version>${r2dbc-spi.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <version>${slf4j.version}</version>
         </dependency>
 
         <dependency>
@@ -136,7 +131,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.8.0</version>
+                <version>3.8.1</version>
                 <configuration>
                     <compilerArgs>
                         <arg>-Werror</arg>
@@ -153,17 +148,17 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-deploy-plugin</artifactId>
-                <version>2.8.2</version>
+                <version>3.0.0-M1</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.0.1</version>
+                <version>3.1.1</version>
                 <configuration>
                     <links>
                         <link>https://projectreactor.io/docs/core/release/api/</link>
                         <link>
-                            https://www.reactive-streams.org/reactive-streams-1.0.2-javadoc/
+                            https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/
                         </link>
                     </links>
                 </configuration>
