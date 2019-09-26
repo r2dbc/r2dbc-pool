@@ -1,6 +1,27 @@
 R2DBC Pool Changelog
 =============================
 
+0.8.0.RC1
+------------------
+* Add default manifest entries #38
+* Upgrade to Reactor Dysprosium GA #37
+* Remove repositories declaration from published pom #35
+* Expose ConnectionMetadata #33
+* Upgrade to Reactor Dysprosium RC1 #32
+* Adapt to AutoCommit SPI changes #30
+* GC'd PoolMetricsWrapper causes Micrometer NaN gauges #29
+* Use Connection.validate() to validate connections #28
+* Fix bug: Change min and max size to be between #26
+* Adapt to PoolMetricsRecorder changes in Reactor Pool #25
+* Adapt to reactor-pool API changes introducing warmup() #24
+* Manually committed transactions issue rollback on Connection.close() #23
+* Adapt to changes in reactor-pool #22
+* specify use of protocol #21
+* Add io.r2dbc.pool.ConnectionPool.toString #20
+* Add ConnectionPool#disposeLater() #18
+* Make "getInitialSize()" method package scoped #17
+* JMX integration to expose PoolMetrics #12
+
 0.8.0.M8
 ------------------
 * Inception
