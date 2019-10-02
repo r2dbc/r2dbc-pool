@@ -30,6 +30,7 @@ import reactor.pool.PoolConfig;
 import reactor.pool.PoolMetricsRecorder;
 import reactor.pool.PooledRef;
 import reactor.pool.PooledRefMetadata;
+import reactor.util.Loggers;
 
 import javax.management.JMException;
 import javax.management.MBeanServer;
@@ -104,6 +105,10 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         Duration maxLifeTime = configuration.getMaxLifeTime();
         Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer = configuration.getCustomizer();
         PoolMetricsRecorder metricsRecorder = configuration.getMetricsRecorder();
+
+        if (factory instanceof ConnectionPool) {
+            Loggers.getLogger(ConnectionPool.class).warn(String.format("Creating ConnectionPool using another ConnectionPool [%s] as ConnectionFactory", factory));
+        }
 
         // set timeout for create connection
         Mono<Connection> allocator = Mono.from(factory.create());

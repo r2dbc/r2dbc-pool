@@ -720,6 +720,19 @@ final class ConnectionPoolUnitTests {
         assertThat(pool).hasToString("ConnectionPool[H2]");
     }
 
+    @Test
+    void shouldReportPoolInPool() {
+
+        ConnectionPool connectionFactoryMock = mock(ConnectionPool.class);
+        when(connectionFactoryMock.create()).thenReturn(Mono.empty());
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .initialSize(0)
+            .build();
+
+        new ConnectionPool(configuration);
+    }
+
     private ConnectionPool createConnectionPoolForDisposeTest(Connection connectionMock) {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
 
