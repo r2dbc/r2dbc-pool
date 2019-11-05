@@ -17,6 +17,7 @@
 package io.r2dbc.pool;
 
 import io.r2dbc.spi.Connection;
+import io.r2dbc.spi.ValidationDepth;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -29,6 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,6 +53,7 @@ class PooledConnectionUnitTests {
         when(pooledRefMock.release()).thenReturn(Mono.empty());
         when(connectionMock.beginTransaction()).thenReturn(Mono.empty());
         when(connectionMock.close()).thenReturn(Mono.empty());
+        when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.empty());
     }
 
     @Test
@@ -109,5 +112,21 @@ class PooledConnectionUnitTests {
 
         verify(connectionMock).rollbackTransaction();
         assertThat(rollbacks).hasValue(1);
+    }
+
+    @Test
+    void shouldInvalidateReferenceForBrokenConnection() {
+
+        AtomicBoolean released = new AtomicBoolean();
+
+        reset(connectionMock);
+        when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.error(new IllegalStateException()));
+        when(pooledRefMock.invalidate()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> released.set(true)));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock);
+
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        assertThat(released).isTrue();
     }
 }

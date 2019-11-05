@@ -39,6 +39,8 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
 
     private final Connection connection;
 
+    private final Mono<Void> release;
+
     private volatile boolean closed = false;
 
     private volatile boolean inTransaction = false;
@@ -46,6 +48,18 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     PooledConnection(PooledRef<Connection> ref) {
         this.ref = ref;
         this.connection = ref.poolable();
+        this.release = Mono.defer(() -> {
+            return Validation.validate(this, ValidationDepth.LOCAL).then(Mono.defer(() -> {
+
+                Mono<Void> cleanup = Mono.empty();
+                if (this.inTransaction) {
+                    cleanup = rollbackTransaction().onErrorResume(throwable -> Mono.empty()).then();
+                }
+
+                return cleanup.doOnSubscribe(ignore -> this.closed = true).then(this.ref.release());
+
+            })).onErrorResume(throwable -> ref.invalidate());
+        });
     }
 
     @Override
@@ -57,16 +71,7 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     @Override
     public Mono<Void> close() {
         assertNotClosed();
-
-        return Mono.defer(() -> {
-
-            Mono<Void> cleanup = Mono.empty();
-            if (this.inTransaction) {
-                cleanup = rollbackTransaction().onErrorResume(throwable -> Mono.empty()).then();
-            }
-
-            return cleanup.doOnSubscribe(ignore -> this.closed = true).then(this.ref.release());
-        });
+        return this.release;
     }
 
     @Override

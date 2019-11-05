@@ -19,7 +19,6 @@ package io.r2dbc.pool;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
-import io.r2dbc.spi.R2dbcNonTransientResourceException;
 import io.r2dbc.spi.Wrapped;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -46,6 +45,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Reactive Relational Database Connection Pool implementation.
@@ -65,6 +65,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     private final Optional<PoolMetrics> poolMetrics;
 
+    private final Mono<Connection> create;
+
     /**
      * Creates a new connection factory.
      *
@@ -82,7 +84,49 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                 registerToJmx(poolMetrics, configuration.getName());
             });
         }
+
+        Function<Connection, Mono<Void>> allocateValidation = getValidation(configuration);
+
+
+        Mono<Connection> create = Mono.defer(() -> {
+
+            AtomicReference<PooledRef<Connection>> emitted = new AtomicReference<>();
+
+            Mono<Connection> mono = this.connectionPool.acquire()
+                .doOnNext(emitted::set)
+                .flatMap(ref -> {
+
+                    PooledConnection connection = new PooledConnection(ref);
+                    return allocateValidation.apply(connection).thenReturn((Connection) connection).onErrorResume(throwable -> {
+                        return ref.invalidate().then(Mono.error(throwable));
+                    });
+                })
+                .doOnCancel(() -> {
+
+                    PooledRef<Connection> ref = emitted.get();
+                    if (ref != null && emitted.compareAndSet(ref, null)) {
+                        ref.release().subscribe();
+                    }
+                });
+
+            if (!this.maxAcquireTime.isZero()) {
+                mono = mono.timeout(this.maxAcquireTime);
+            }
+            return mono;
+        });
+        this.create = configuration.getAcquireRetry() > 0 ? create.retry(configuration.getAcquireRetry()) : create;
     }
+
+    private Function<Connection, Mono<Void>> getValidation(ConnectionPoolConfiguration configuration) {
+
+        String validationQuery = configuration.getValidationQuery();
+        if (validationQuery != null && !validationQuery.isEmpty()) {
+            return connection -> Validation.validate(connection, validationQuery);
+        }
+
+        return connection -> Validation.validate(connection, configuration.getValidationDepth());
+    }
+
 
     /**
      * Warms up the {@link ConnectionPool}, if needed. This instructs the pool to check for a minimum size and allocate
@@ -100,7 +144,6 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         Duration maxCreateConnectionTime = configuration.getMaxCreateConnectionTime();
         int initialSize = configuration.getInitialSize();
         int maxSize = configuration.getMaxSize();
-        String validationQuery = configuration.getValidationQuery();
         Duration maxIdleTime = configuration.getMaxIdleTime();
         Duration maxLifeTime = configuration.getMaxLifeTime();
         Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer = configuration.getCustomizer();
@@ -141,24 +184,6 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             builder.sizeBetween(initialSize, maxSize);
         }
 
-        if (validationQuery != null && !validationQuery.isEmpty()) {
-            builder.releaseHandler(connection -> {
-                return Flux.from(connection.createStatement(validationQuery).execute()).flatMap(it -> it.map((row, rowMetadata) -> Optional.ofNullable(row.get(0)))).then();
-            });
-        } else {
-            builder.releaseHandler(connection -> {
-                return Flux.from(connection.validate(configuration.getValidationDepth())).handle((state, sink) -> {
-
-                    if (state) {
-                        sink.complete();
-                        return;
-                    }
-
-                    sink.error(new R2dbcNonTransientResourceException("Connection validation failed"));
-                }).then();
-            });
-        }
-
         customizer.accept(builder);
 
         return builder.fifo();
@@ -166,26 +191,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     @Override
     public Mono<Connection> create() {
-        return Mono.defer(() -> {
-
-            AtomicReference<PooledRef<Connection>> emitted = new AtomicReference<>();
-
-            Mono<PooledConnection> mono = this.connectionPool.acquire()
-                .doOnNext(emitted::set)
-                .map(PooledConnection::new)
-                .doOnCancel(() -> {
-
-                    PooledRef<Connection> ref = emitted.get();
-                    if (ref != null && emitted.compareAndSet(ref, null)) {
-                        ref.release().subscribe();
-                    }
-                });
-
-            if (!this.maxAcquireTime.isZero()) {
-                mono = mono.timeout(this.maxAcquireTime);
-            }
-            return mono;
-        });
+        return this.create;
     }
 
     @Override

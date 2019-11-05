@@ -85,4 +85,15 @@ final class PoolingConnectionFactoryProviderUnitTests {
         assertThat(configuration)
             .hasFieldOrPropertyWithValue("validationDepth", ValidationDepth.REMOTE);
     }
+
+    @Test
+    void shouldApplyAcquireRetry() {
+
+        ConnectionFactoryOptions options = ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?acquireRetry=2");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("acquireRetry", 2);
+    }
 }

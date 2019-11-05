@@ -42,6 +42,11 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public static final String POOLING_DRIVER = "pool";
 
     /**
+     * AcquireRetry {@link Option}.
+     */
+    public static final Option<Integer> ACQUIRE_RETRY = Option.valueOf("acquireRetry");
+
+    /**
      * MaxSize {@link Option}.
      */
     public static final Option<Integer> MAX_SIZE = Option.valueOf("maxSize");
@@ -111,6 +116,12 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
             } else {
                 throw new IllegalArgumentException(String.format("Invalid maxSize option:%s", maxSize));
             }
+        }
+
+        if (connectionFactoryOptions.hasOption(ACQUIRE_RETRY)) {
+
+            Object value = connectionFactoryOptions.getRequiredValue(ACQUIRE_RETRY);
+            builder.acquireRetry(value instanceof String ? Integer.parseInt(value.toString()) : ((Number) value).intValue());
         }
 
         if (connectionFactoryOptions.hasOption(VALIDATION_QUERY)) {

@@ -103,6 +103,7 @@ final class ConnectionPoolUnitTests {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
         ConnectionPool pool = new ConnectionPool(configuration);
@@ -126,6 +127,7 @@ final class ConnectionPoolUnitTests {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnNext(it -> creations.incrementAndGet()));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
         ConnectionPool pool = new ConnectionPool(configuration);
@@ -150,6 +152,7 @@ final class ConnectionPoolUnitTests {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnNext(it -> creations.incrementAndGet()));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).customizer(connectionPoolBuilder -> connectionPoolBuilder.sizeBetween(2, 10)).build();
         ConnectionPool pool = new ConnectionPool(configuration);
@@ -198,6 +201,7 @@ final class ConnectionPoolUnitTests {
         Connection connectionMock = mock(Connection.class);
         AtomicLong createCounter = new AtomicLong();
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnSubscribe(ignore -> createCounter.incrementAndGet()));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).build();
         ConnectionPool pool = new ConnectionPool(configuration);
@@ -246,14 +250,15 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.defer(() ->
             Mono.delay(Duration.ofDays(1)).thenReturn(connectionMock))
         );
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .acquireRetry(0)
             .initialSize(0)
             .maxAcquireTime(Duration.ofMinutes(10))
             .build();
-        ConnectionPool pool = new ConnectionPool(configuration);
 
-        StepVerifier.withVirtualTime(pool::create)
+        StepVerifier.withVirtualTime(() -> new ConnectionPool(configuration).create())
             .expectSubscription()
             .thenAwait(Duration.ofMinutes(11))
             .expectError(TimeoutException.class)
@@ -272,6 +277,7 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.defer(() ->
             Mono.delay(Duration.ofMillis(100)).thenReturn(connectionMock))
         );
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
             .initialSize(1)
@@ -317,6 +323,7 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.create()).thenReturn((Publisher) connectionPublisher);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .acquireRetry(0)
             .initialSize(0)
             .maxAcquireTime(Duration.ofMillis(70))
             .build();
@@ -590,6 +597,7 @@ final class ConnectionPoolUnitTests {
 
         // acquire time should also consider the time to obtain an actual connection
         when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
         // pool.dispose() calls connection.close()
         when(connectionMock.close()).thenReturn(Mono.empty());
@@ -689,20 +697,47 @@ final class ConnectionPoolUnitTests {
 
         when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock).doOnSubscribe(ignore -> subscriptions.incrementAndGet()));
         when(connectionMock.close()).thenReturn(Mono.empty());
+        // first broken, retry broken, last success
+        when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.just(false), Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .acquireRetry(0)
             .initialSize(0)
             .maxSize(2)
             .build();
 
         ConnectionPool pool = new ConnectionPool(configuration);
 
-        when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.just(false), Mono.empty());
-
         pool.create().flatMapMany(Connection::close).as(StepVerifier::create).verifyError();
         pool.create().flatMapMany(Connection::close).as(StepVerifier::create).verifyComplete();
 
         assertThat(subscriptions).hasValue(2);
+    }
+
+    @Test
+    void shouldDropConnectionOnFailedValidationWithRetry() {
+
+        AtomicInteger subscriptions = new AtomicInteger();
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock).doOnSubscribe(ignore -> subscriptions.incrementAndGet()));
+        when(connectionMock.close()).thenReturn(Mono.empty());
+        // first broken, retry broken, last success
+        when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.just(false), Mono.just(false), Mono.empty());
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .acquireRetry(1)
+            .initialSize(0)
+            .maxSize(2)
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        pool.create().flatMapMany(Connection::close).as(StepVerifier::create).verifyError();
+        pool.create().flatMapMany(Connection::close).as(StepVerifier::create).verifyComplete();
+
+        assertThat(subscriptions).hasValue(3);
     }
 
     @Test
@@ -738,6 +773,7 @@ final class ConnectionPoolUnitTests {
 
         // acquire time should also consider the time to obtain an actual connection
         when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
         // pool.dispose() calls connection.close()
         when(connectionMock.close()).thenReturn(Mono.empty());

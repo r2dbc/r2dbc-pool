@@ -19,6 +19,7 @@ package io.r2dbc.pool;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ValidationDepth;
+import reactor.core.publisher.Mono;
 import reactor.pool.PoolBuilder;
 import reactor.pool.PoolConfig;
 import reactor.pool.PoolMetricsRecorder;
@@ -35,6 +36,8 @@ import java.util.function.Consumer;
  * @author Tadaya Tsuyukubo
  */
 public final class ConnectionPoolConfiguration {
+
+    private final int acquireRetry;
 
     private final ConnectionFactory connectionFactory;
 
@@ -66,9 +69,10 @@ public final class ConnectionPoolConfiguration {
     @Nullable
     private final String validationQuery;
 
-    public ConnectionPoolConfiguration(ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
+    public ConnectionPoolConfiguration(int acquireRetry, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
                                        int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
                                        PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
+        this.acquireRetry = acquireRetry;
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.clock = clock;
         this.customizer = customizer;
@@ -93,6 +97,10 @@ public final class ConnectionPoolConfiguration {
      */
     public static Builder builder(ConnectionFactory connectionFactory) {
         return new Builder(Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null"));
+    }
+
+    int getAcquireRetry() {
+        return this.acquireRetry;
     }
 
     ConnectionFactory getConnectionFactory() {
@@ -160,6 +168,8 @@ public final class ConnectionPoolConfiguration {
      */
     public static final class Builder {
 
+        private int acquireRetry = 1;
+
         private final ConnectionFactory connectionFactory;
 
         private Clock clock = Clock.systemUTC();
@@ -193,6 +203,22 @@ public final class ConnectionPoolConfiguration {
 
         private Builder(ConnectionFactory connectionFactory) {
             this.connectionFactory = connectionFactory;
+        }
+
+        /**
+         * Configure the number of acquire retries if the first acquiry attempt fails.
+         *
+         * @param retryAttempts the number of retries. Can be zero or any positive number
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code retryAttempts} is less than zero.
+         * @see Mono#retry(long)
+         */
+        public Builder acquireRetry(int retryAttempts) {
+            if (retryAttempts < 0) {
+                throw new IllegalArgumentException("retryAttempts must not be negative");
+            }
+            this.acquireRetry = retryAttempts;
+            return this;
         }
 
         /**
@@ -389,7 +415,8 @@ public final class ConnectionPoolConfiguration {
          */
         public ConnectionPoolConfiguration build() {
             validate();
-            return new ConnectionPoolConfiguration(this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize, this.maxIdleTime, this.maxCreateConnectionTime,
+            return new ConnectionPoolConfiguration(this.acquireRetry, this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize, this.maxIdleTime,
+                this.maxCreateConnectionTime,
                 this.maxAcquireTime, this.maxLifeTime, this.metricsRecorder, this.name, this.registerJmx, this.validationDepth, this.validationQuery
             );
         }
@@ -403,6 +430,7 @@ public final class ConnectionPoolConfiguration {
         @Override
         public String toString() {
             return "Builder{" +
+                "acquireRetry='" + this.acquireRetry + '\'' +
                 "connectionFactory='" + this.connectionFactory + '\'' +
                 ", clock='" + this.clock + '\'' +
                 ", initialSize='" + this.initialSize + '\'' +
