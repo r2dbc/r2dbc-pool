@@ -92,4 +92,46 @@ final class ConnectionPoolConfigurationUnitTests {
             ConnectionPoolConfiguration.builder(connectionFactoryMock).registerJmx(true).build()
         ).withMessage("name must not be null when registering to JMX");
     }
+
+    @Test
+    void initialSizeEqualMaxSizeWhenNotSpecified() {
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .maxSize(20)
+            .build();
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("initialSize", 20)
+            .hasFieldOrPropertyWithValue("maxSize", 20);
+    }
+
+    @Test
+    void maxSizeEqualInitialSizeWhenNotSpecified() {
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .initialSize(20)
+            .build();
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("initialSize", 20)
+            .hasFieldOrPropertyWithValue("maxSize", 20);
+    }
+
+    @Test
+    void initialSizeMustBeGreaterZeroWhenMaxSizeNotSpecified() {
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+
+        assertThatIllegalArgumentException().isThrownBy(() ->
+            ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).build()
+        ).withMessage("initialSize must be greater than zero when maxSize is not configured");
+    }
+
+    @Test
+    void maxSizeGreaterOrEqualInitialSize() {
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+
+        assertThatIllegalArgumentException().isThrownBy(() ->
+            ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(2).maxSize(1).build()
+        ).withMessage("maxSize must be greater than or equal to initialSize");
+    }
 }

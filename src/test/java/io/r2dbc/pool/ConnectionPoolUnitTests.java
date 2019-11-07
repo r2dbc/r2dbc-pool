@@ -178,7 +178,7 @@ final class ConnectionPoolUnitTests {
         AtomicLong createCounter = new AtomicLong();
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnSubscribe(ignore -> createCounter.incrementAndGet()));
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(1).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         pool.create().as(StepVerifier::create).assertNext(actual -> {
@@ -203,7 +203,7 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnSubscribe(ignore -> createCounter.incrementAndGet()));
         when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxSize(2).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         pool.create().as(StepVerifier::create).expectNextCount(1).verifyComplete();
@@ -224,7 +224,7 @@ final class ConnectionPoolUnitTests {
         );
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
-            .initialSize(0)
+            .initialSize(1)
             .maxCreateConnectionTime(Duration.ofMinutes(10))
             .build();
 
@@ -254,7 +254,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
             .acquireRetry(0)
-            .initialSize(0)
+            .initialSize(1)
             .maxAcquireTime(Duration.ofMinutes(10))
             .build();
 
@@ -325,6 +325,7 @@ final class ConnectionPoolUnitTests {
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
             .acquireRetry(0)
             .initialSize(0)
+            .maxSize(3)
             .maxAcquireTime(Duration.ofMillis(70))
             .build();
         ConnectionPool pool = new ConnectionPool(configuration);
@@ -370,7 +371,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
             .clock(delayClock)
-            .initialSize(0)
+            .initialSize(1)
             .metricsRecorder(metricsRecorder)
             .maxIdleTime(Duration.ofDays(2))  // set idle to 2 days
             .build();
@@ -402,7 +403,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
             .clock(delayClock)
-            .initialSize(0)
+            .initialSize(1)
             .metricsRecorder(metricsRecorder)
             .build();
         ConnectionPool pool = new ConnectionPool(configuration);
@@ -427,7 +428,7 @@ final class ConnectionPoolUnitTests {
         CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
-            .initialSize(0)
+            .initialSize(1)
             .maxIdleTime(Duration.ZERO)
             .build();
         ConnectionPool pool = new ConnectionPool(configuration);
@@ -452,7 +453,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
             .clock(delayClock)
-            .initialSize(0)
+            .initialSize(1)
             .metricsRecorder(metricsRecorder)
             .maxLifeTime(Duration.ofDays(1))
             .build();
@@ -486,7 +487,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
             .clock(delayClock)
-            .initialSize(0)
+            .initialSize(1)
             .metricsRecorder(metricsRecorder)
             .maxIdleTime(Duration.ZERO)  // do not evict by idle time
             .build();
@@ -702,7 +703,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
             .acquireRetry(0)
-            .initialSize(0)
+            .initialSize(1)
             .maxSize(2)
             .build();
 
@@ -728,7 +729,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
             .acquireRetry(1)
-            .initialSize(0)
+            .initialSize(1)
             .maxSize(2)
             .build();
 
@@ -749,7 +750,7 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.getMetadata()).thenReturn(metadataMock);
         when(metadataMock.getName()).thenReturn("H2");
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(1).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         assertThat(pool).hasToString("ConnectionPool[H2]");
@@ -762,7 +763,7 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.create()).thenReturn(Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
-            .initialSize(0)
+            .initialSize(1)
             .build();
 
         new ConnectionPool(configuration);

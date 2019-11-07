@@ -69,7 +69,7 @@ public final class ConnectionPoolConfiguration {
     @Nullable
     private final String validationQuery;
 
-    public ConnectionPoolConfiguration(int acquireRetry, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
+    private ConnectionPoolConfiguration(int acquireRetry, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
                                        int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
                                        PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
         this.acquireRetry = acquireRetry;
@@ -168,6 +168,8 @@ public final class ConnectionPoolConfiguration {
      */
     public static final class Builder {
 
+        private static final int DEFAULT_SIZE = 10;
+
         private int acquireRetry = 1;
 
         private final ConnectionFactory connectionFactory;
@@ -177,9 +179,9 @@ public final class ConnectionPoolConfiguration {
         private Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer = poolBuilder -> {
         };  // no-op
 
-        private int initialSize = 10;
+        private Integer initialSize;
 
-        private int maxSize = 10;
+        private Integer maxSize;
 
         private Duration maxIdleTime = Duration.ofMinutes(30);
 
@@ -424,6 +426,23 @@ public final class ConnectionPoolConfiguration {
         private void validate() {
             if (this.registerJmx) {
                 Assert.requireNonNull(this.name, "name must not be null when registering to JMX");
+            }
+
+            if (this.initialSize == null && this.maxSize == null) {
+                this.initialSize = DEFAULT_SIZE;
+                this.maxSize = DEFAULT_SIZE;
+            } else if (this.initialSize == null) {
+                this.initialSize = this.maxSize;
+            } else if (this.maxSize == null) {
+                if (this.initialSize < 1) {
+                    throw new IllegalArgumentException("initialSize must be greater than zero when maxSize is not configured");
+                }
+
+                this.maxSize = this.initialSize;
+            }
+
+            if (this.maxSize < this.initialSize) {
+                throw new IllegalArgumentException("maxSize must be greater than or equal to initialSize");
             }
         }
 
