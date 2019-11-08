@@ -96,4 +96,16 @@ final class PoolingConnectionFactoryProviderUnitTests {
         assertThat(configuration)
             .hasFieldOrPropertyWithValue("acquireRetry", 2);
     }
+
+    @Test
+    void shouldApplyInitialSizeAndMaxSize() {
+
+        ConnectionFactoryOptions options = ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?initialSize=2&maxSize=12");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("initialSize", 2)
+            .hasFieldOrPropertyWithValue("maxSize", 12);
+    }
 }

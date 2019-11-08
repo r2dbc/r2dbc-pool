@@ -31,6 +31,7 @@ import static org.mockito.Mockito.mock;
  *
  * @author Mark Paluch
  * @author Tadaya Tsuyukubo
+ * @author Steffen Kreutz
  */
 final class ConnectionPoolConfigurationUnitTests {
 
@@ -94,15 +95,27 @@ final class ConnectionPoolConfigurationUnitTests {
     }
 
     @Test
-    void initialSizeEqualMaxSizeWhenNotSpecified() {
+    void initialSizeUsesDefaultSpecified() {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
             .maxSize(20)
             .build();
 
         assertThat(configuration)
-            .hasFieldOrPropertyWithValue("initialSize", 20)
+            .hasFieldOrPropertyWithValue("initialSize", 10)
             .hasFieldOrPropertyWithValue("maxSize", 20);
+    }
+
+    @Test
+    void initialSizeUpdatedToMatchMaxSize() {
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .maxSize(5)
+            .build();
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("initialSize", 5)
+            .hasFieldOrPropertyWithValue("maxSize", 5);
     }
 
     @Test
@@ -115,15 +128,6 @@ final class ConnectionPoolConfigurationUnitTests {
         assertThat(configuration)
             .hasFieldOrPropertyWithValue("initialSize", 20)
             .hasFieldOrPropertyWithValue("maxSize", 20);
-    }
-
-    @Test
-    void initialSizeMustBeGreaterZeroWhenMaxSizeNotSpecified() {
-        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
-
-        assertThatIllegalArgumentException().isThrownBy(() ->
-            ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).build()
-        ).withMessage("initialSize must be greater than zero when maxSize is not configured");
     }
 
     @Test

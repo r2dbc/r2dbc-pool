@@ -34,6 +34,7 @@ import java.util.function.Consumer;
  *
  * @author Mark Paluch
  * @author Tadaya Tsuyukubo
+ * @author Steffen Kreutz
  */
 public final class ConnectionPoolConfiguration {
 
@@ -70,8 +71,8 @@ public final class ConnectionPoolConfiguration {
     private final String validationQuery;
 
     private ConnectionPoolConfiguration(int acquireRetry, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
-                                       int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
-                                       PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
+                                        int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
+                                        PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
         this.acquireRetry = acquireRetry;
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.clock = clock;
@@ -416,6 +417,7 @@ public final class ConnectionPoolConfiguration {
          * @throws IllegalArgumentException if {@code registerJmx} is {@code true} AND {@code name} is {@code null}
          */
         public ConnectionPoolConfiguration build() {
+            applyDefaults();
             validate();
             return new ConnectionPoolConfiguration(this.acquireRetry, this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize, this.maxIdleTime,
                 this.maxCreateConnectionTime,
@@ -423,25 +425,30 @@ public final class ConnectionPoolConfiguration {
             );
         }
 
+        /**
+         * Apply defaults to {@code initialSize} and {@code maxSize} if at leas one of the parameters is not set.
+         */
+        private void applyDefaults() {
+            if (this.initialSize == null && this.maxSize == null) {
+                this.initialSize = DEFAULT_SIZE;
+                this.maxSize = DEFAULT_SIZE;
+            } else if (this.initialSize == null) {
+                this.initialSize = Math.min(DEFAULT_SIZE, this.maxSize);
+            } else if (this.maxSize == null) {
+                this.maxSize = Math.max(DEFAULT_SIZE, this.initialSize);
+            }
+        }
+
         private void validate() {
             if (this.registerJmx) {
                 Assert.requireNonNull(this.name, "name must not be null when registering to JMX");
             }
 
-            if (this.initialSize == null && this.maxSize == null) {
-                this.initialSize = DEFAULT_SIZE;
-                this.maxSize = DEFAULT_SIZE;
-            } else if (this.initialSize == null) {
-                this.initialSize = this.maxSize;
-            } else if (this.maxSize == null) {
-                if (this.initialSize < 1) {
-                    throw new IllegalArgumentException("initialSize must be greater than zero when maxSize is not configured");
-                }
-
-                this.maxSize = this.initialSize;
+            if (0 > this.initialSize) {
+                throw new IllegalArgumentException("initialSize must be non-negative");
             }
 
-            if (this.maxSize < this.initialSize) {
+            if (this.initialSize > this.maxSize) {
                 throw new IllegalArgumentException("maxSize must be greater than or equal to initialSize");
             }
         }
