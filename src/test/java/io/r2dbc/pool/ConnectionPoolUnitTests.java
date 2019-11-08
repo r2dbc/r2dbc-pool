@@ -224,7 +224,6 @@ final class ConnectionPoolUnitTests {
         );
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
-            .initialSize(0)
             .maxCreateConnectionTime(Duration.ofMinutes(10))
             .build();
 
@@ -254,7 +253,6 @@ final class ConnectionPoolUnitTests {
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
             .acquireRetry(0)
-            .initialSize(0)
             .maxAcquireTime(Duration.ofMinutes(10))
             .build();
 

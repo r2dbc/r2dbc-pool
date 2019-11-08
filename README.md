@@ -70,6 +70,7 @@ Supported Connection Factory Discovery options:
 | `driver`          | Must be `pool`
 | `protocol`        | Driver identifier. The value is propagated by the pool to the `driver` property.
 | `acquireRetry`    | Number of retries if the first connection acquiry attempt fails. Defaults to `1`.
+| `initialSize`     | Initial pool size. Defaults to `10`.
 | `maxSize`         | Maximum pool size. Defaults to `10`.
 | `validationDepth` | Validation depth used to validate an R2DBC connection. Defaults to `LOCAL`.
 | `validationQuery` | Query that will be executed just before a connection is given to you from the pool to validate that the connection to the database is still alive.

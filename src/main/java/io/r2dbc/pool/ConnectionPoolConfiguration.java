@@ -34,6 +34,7 @@ import java.util.function.Consumer;
  *
  * @author Mark Paluch
  * @author Tadaya Tsuyukubo
+ * @author Steffen Kreutz
  */
 public final class ConnectionPoolConfiguration {
 
@@ -69,9 +70,9 @@ public final class ConnectionPoolConfiguration {
     @Nullable
     private final String validationQuery;
 
-    public ConnectionPoolConfiguration(int acquireRetry, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
-                                       int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
-                                       PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
+    private ConnectionPoolConfiguration(int acquireRetry, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
+                                        int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
+                                        PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
         this.acquireRetry = acquireRetry;
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.clock = clock;
@@ -168,6 +169,8 @@ public final class ConnectionPoolConfiguration {
      */
     public static final class Builder {
 
+        private static final int DEFAULT_SIZE = 10;
+
         private int acquireRetry = 1;
 
         private final ConnectionFactory connectionFactory;
@@ -177,9 +180,9 @@ public final class ConnectionPoolConfiguration {
         private Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer = poolBuilder -> {
         };  // no-op
 
-        private int initialSize = 10;
+        private Integer initialSize;
 
-        private int maxSize = 10;
+        private Integer maxSize;
 
         private Duration maxIdleTime = Duration.ofMinutes(30);
 
@@ -414,6 +417,7 @@ public final class ConnectionPoolConfiguration {
          * @throws IllegalArgumentException if {@code registerJmx} is {@code true} AND {@code name} is {@code null}
          */
         public ConnectionPoolConfiguration build() {
+            applyDefaults();
             validate();
             return new ConnectionPoolConfiguration(this.acquireRetry, this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize, this.maxIdleTime,
                 this.maxCreateConnectionTime,
@@ -421,9 +425,31 @@ public final class ConnectionPoolConfiguration {
             );
         }
 
+        /**
+         * Apply defaults to {@code initialSize} and {@code maxSize} if at leas one of the parameters is not set.
+         */
+        private void applyDefaults() {
+            if (this.initialSize == null && this.maxSize == null) {
+                this.initialSize = DEFAULT_SIZE;
+                this.maxSize = DEFAULT_SIZE;
+            } else if (this.initialSize == null) {
+                this.initialSize = Math.min(DEFAULT_SIZE, this.maxSize);
+            } else if (this.maxSize == null) {
+                this.maxSize = Math.max(DEFAULT_SIZE, this.initialSize);
+            }
+        }
+
         private void validate() {
             if (this.registerJmx) {
                 Assert.requireNonNull(this.name, "name must not be null when registering to JMX");
+            }
+
+            if (0 > this.initialSize) {
+                throw new IllegalArgumentException("initialSize must be non-negative");
+            }
+
+            if (this.initialSize > this.maxSize) {
+                throw new IllegalArgumentException("maxSize must be greater than or equal to initialSize");
             }
         }
 

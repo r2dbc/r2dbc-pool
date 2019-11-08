@@ -47,6 +47,11 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public static final Option<Integer> ACQUIRE_RETRY = Option.valueOf("acquireRetry");
 
     /**
+     * InitialSize {@link Option}.
+     */
+    public static final Option<Integer> INITIAL_SIZE = Option.valueOf("initialSize");
+
+    /**
      * MaxSize {@link Option}.
      */
     public static final Option<Integer> MAX_SIZE = Option.valueOf("maxSize");
@@ -105,23 +110,16 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
 
         Builder builder = builder(connectionFactory);
 
+        if (connectionFactoryOptions.hasOption(INITIAL_SIZE)) {
+            builder.initialSize(parseIntOption(connectionFactoryOptions, INITIAL_SIZE));
+        }
+
         if (connectionFactoryOptions.hasOption(MAX_SIZE)) {
-
-            Object maxSize = connectionFactoryOptions.getRequiredValue(MAX_SIZE);
-
-            if (maxSize instanceof Number) {
-                builder.maxSize(((Integer) maxSize).intValue());
-            } else if (maxSize instanceof String) {
-                builder.maxSize(Integer.parseInt(maxSize.toString()));
-            } else {
-                throw new IllegalArgumentException(String.format("Invalid maxSize option:%s", maxSize));
-            }
+            builder.maxSize(parseIntOption(connectionFactoryOptions, MAX_SIZE));
         }
 
         if (connectionFactoryOptions.hasOption(ACQUIRE_RETRY)) {
-
-            Object value = connectionFactoryOptions.getRequiredValue(ACQUIRE_RETRY);
-            builder.acquireRetry(value instanceof String ? Integer.parseInt(value.toString()) : ((Number) value).intValue());
+            builder.acquireRetry(parseIntOption(connectionFactoryOptions, ACQUIRE_RETRY));
         }
 
         if (connectionFactoryOptions.hasOption(VALIDATION_QUERY)) {
@@ -142,6 +140,20 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         }
 
         return builder.build();
+    }
+
+    private static int parseIntOption(ConnectionFactoryOptions options, Option<?> option) {
+
+        Object value = options.getRequiredValue(option);
+        if (value instanceof Number) {
+            return ((Integer) value);
+        }
+
+        if (value instanceof String) {
+            return Integer.parseInt(value.toString());
+        }
+
+        throw new IllegalArgumentException(String.format("Invalid %s option: %s", option.name(), value));
     }
 
     @Override
