@@ -3,6 +3,7 @@ R2DBC Pool Changelog
 
 0.8.0.RELEASE
 ------------------
+* Upgrade to R2DBC SPI 0.8.0.RELEASE #48
 * Make initial pool size configurable #44
 * Handle validation in acquire flow #43
 * Add warning log if ConnectionPool gets created with a nested ConnectionPool #40
