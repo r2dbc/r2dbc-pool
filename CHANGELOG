@@ -1,6 +1,12 @@
 R2DBC Pool Changelog
 =============================
 
+0.8.0.RELEASE
+------------------
+* Make initial pool size configurable #44
+* Handle validation in acquire flow #43
+* Add warning log if ConnectionPool gets created with a nested ConnectionPool #40
+
 0.8.0.RC1
 ------------------
 * Add default manifest entries #38
