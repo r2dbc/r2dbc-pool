@@ -35,7 +35,7 @@
         <assertj.version>3.14.0</assertj.version>
         <java.version>1.8</java.version>
         <jsr305.version>3.0.2</jsr305.version>
-        <junit.version>5.5.2</junit.version>
+        <junit.version>5.6.0</junit.version>
         <logback.version>1.2.3</logback.version>
         <mockito.version>3.1.0</mockito.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
