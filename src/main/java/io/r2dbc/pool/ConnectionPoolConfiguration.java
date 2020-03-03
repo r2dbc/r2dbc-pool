@@ -403,7 +403,7 @@ public final class ConnectionPoolConfiguration {
          *
          * @param validationDepth the depth of validation, must not be {@literal null}
          * @return this {@link Builder}
-         * @throws IllegalArgumentException if {@code validationQuery} is {@code null}
+         * @throws IllegalArgumentException if {@code validationDepth} is {@code null}
          */
         public Builder validationDepth(ValidationDepth validationDepth) {
             this.validationDepth = Assert.requireNonNull(validationDepth, "ValidationQuery must not be null");
