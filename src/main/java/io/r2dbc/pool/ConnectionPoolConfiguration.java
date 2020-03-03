@@ -100,6 +100,16 @@ public final class ConnectionPoolConfiguration {
         return new Builder(Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null"));
     }
 
+    /**
+     * Returns a new {@link Builder}.
+     *
+     * @return a new {@link Builder}
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+
     int getAcquireRetry() {
         return this.acquireRetry;
     }
@@ -173,7 +183,7 @@ public final class ConnectionPoolConfiguration {
 
         private int acquireRetry = 1;
 
-        private final ConnectionFactory connectionFactory;
+        private ConnectionFactory connectionFactory;
 
         private Clock clock = Clock.systemUTC();
 
@@ -207,6 +217,8 @@ public final class ConnectionPoolConfiguration {
         private Builder(ConnectionFactory connectionFactory) {
             this.connectionFactory = connectionFactory;
         }
+
+        private Builder() {}
 
         /**
          * Configure the number of acquire retries if the first acquiry attempt fails.
@@ -399,6 +411,18 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
+         * Configure connection factory.
+         *
+         * @param connectionFactory the connection factory to connect to the db, must not be {@literal null}
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code connectionFactory} is {@code null}
+         */
+        public Builder connectionFactory(ConnectionFactory connectionFactory) {
+            this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
+            return this;
+        }
+
+        /**
          * Configure a validation query. When a validation query is used, then {@link Connection#validate(ValidationDepth)} is not used.
          *
          * @param validationQuery the validation query to run before returning a {@link Connection} from the pool, must not be {@code null}.
@@ -440,6 +464,8 @@ public final class ConnectionPoolConfiguration {
         }
 
         private void validate() {
+            Assert.requireNonNull(this.connectionFactory, "connection factory must not be null");
+
             if (this.registerJmx) {
                 Assert.requireNonNull(this.name, "name must not be null when registering to JMX");
             }
