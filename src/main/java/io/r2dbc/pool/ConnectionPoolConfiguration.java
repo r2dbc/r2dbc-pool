@@ -35,6 +35,7 @@ import java.util.function.Consumer;
  * @author Mark Paluch
  * @author Tadaya Tsuyukubo
  * @author Steffen Kreutz
+ * @author Rodolfo Beletatti
  */
 public final class ConnectionPoolConfiguration {
 
@@ -99,6 +100,16 @@ public final class ConnectionPoolConfiguration {
     public static Builder builder(ConnectionFactory connectionFactory) {
         return new Builder(Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null"));
     }
+
+    /**
+     * Returns a new {@link Builder}.
+     *
+     * @return a new {@link Builder}
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
 
     int getAcquireRetry() {
         return this.acquireRetry;
@@ -173,7 +184,7 @@ public final class ConnectionPoolConfiguration {
 
         private int acquireRetry = 1;
 
-        private final ConnectionFactory connectionFactory;
+        private ConnectionFactory connectionFactory;
 
         private Clock clock = Clock.systemUTC();
 
@@ -207,6 +218,8 @@ public final class ConnectionPoolConfiguration {
         private Builder(ConnectionFactory connectionFactory) {
             this.connectionFactory = connectionFactory;
         }
+
+        private Builder() {}
 
         /**
          * Configure the number of acquire retries if the first acquiry attempt fails.
@@ -391,10 +404,22 @@ public final class ConnectionPoolConfiguration {
          *
          * @param validationDepth the depth of validation, must not be {@literal null}
          * @return this {@link Builder}
-         * @throws IllegalArgumentException if {@code validationQuery} is {@code null}
+         * @throws IllegalArgumentException if {@code validationDepth} is {@code null}
          */
         public Builder validationDepth(ValidationDepth validationDepth) {
             this.validationDepth = Assert.requireNonNull(validationDepth, "ValidationQuery must not be null");
+            return this;
+        }
+
+        /**
+         * Configure connection factory.
+         *
+         * @param connectionFactory the connection factory to connect to the db, must not be {@literal null}
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code connectionFactory} is {@code null}
+         */
+        public Builder connectionFactory(ConnectionFactory connectionFactory) {
+            this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
             return this;
         }
 
@@ -440,6 +465,8 @@ public final class ConnectionPoolConfiguration {
         }
 
         private void validate() {
+            Assert.requireNonNull(this.connectionFactory, "connection factory must not be null");
+
             if (this.registerJmx) {
                 Assert.requireNonNull(this.name, "name must not be null when registering to JMX");
             }
