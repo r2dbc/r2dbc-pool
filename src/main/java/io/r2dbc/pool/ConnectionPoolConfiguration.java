@@ -35,6 +35,7 @@ import java.util.function.Consumer;
  * @author Mark Paluch
  * @author Tadaya Tsuyukubo
  * @author Steffen Kreutz
+ * @author Rodolfo Beletatti
  */
 public final class ConnectionPoolConfiguration {
 
