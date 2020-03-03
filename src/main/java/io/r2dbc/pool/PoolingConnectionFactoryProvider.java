@@ -108,7 +108,8 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
             throw new IllegalArgumentException(String.format("Could not find delegating driver %s", driverDelegate));
         }
 
-        Builder builder = builder(connectionFactory);
+        Builder builder = builder();
+        builder.connectionFactory(connectionFactory);
 
         if (connectionFactoryOptions.hasOption(INITIAL_SIZE)) {
             builder.initialSize(parseIntOption(connectionFactoryOptions, INITIAL_SIZE));
