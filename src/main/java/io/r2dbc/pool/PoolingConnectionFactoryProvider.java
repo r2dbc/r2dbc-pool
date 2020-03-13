@@ -26,13 +26,13 @@ import io.r2dbc.spi.ValidationDepth;
 import java.util.Locale;
 
 import static io.r2dbc.pool.ConnectionPoolConfiguration.Builder;
-import static io.r2dbc.pool.ConnectionPoolConfiguration.builder;
 import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
 
 /**
  * An implementation of {@link ConnectionFactory} for creating pooled connections to a delegated {@link ConnectionFactory}.
  *
  * @author Mark Paluch
+ * @author Rodolfo Beletatti
  */
 public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvider {
 
@@ -108,8 +108,7 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
             throw new IllegalArgumentException(String.format("Could not find delegating driver %s", driverDelegate));
         }
 
-        Builder builder = builder();
-        builder.connectionFactory(connectionFactory);
+        Builder builder = ConnectionPoolConfiguration.builder(connectionFactory);
 
         if (connectionFactoryOptions.hasOption(INITIAL_SIZE)) {
             builder.initialSize(parseIntOption(connectionFactoryOptions, INITIAL_SIZE));
