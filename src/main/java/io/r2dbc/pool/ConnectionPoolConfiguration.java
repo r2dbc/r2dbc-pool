@@ -98,18 +98,18 @@ public final class ConnectionPoolConfiguration {
      * @return a new {@link Builder}
      */
     public static Builder builder(ConnectionFactory connectionFactory) {
-        return new Builder(Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null"));
+        return new Builder().connectionFactory(connectionFactory);
     }
 
     /**
      * Returns a new {@link Builder}.
      *
      * @return a new {@link Builder}
+     * @since 0.9
      */
     public static Builder builder() {
         return new Builder();
     }
-
 
     int getAcquireRetry() {
         return this.acquireRetry;
@@ -215,11 +215,8 @@ public final class ConnectionPoolConfiguration {
 
         private ValidationDepth validationDepth = ValidationDepth.LOCAL;
 
-        private Builder(ConnectionFactory connectionFactory) {
-            this.connectionFactory = connectionFactory;
+        private Builder() {
         }
-
-        private Builder() {}
 
         /**
          * Configure the number of acquire retries if the first acquiry attempt fails.
@@ -417,6 +414,7 @@ public final class ConnectionPoolConfiguration {
          * @param connectionFactory the connection factory to connect to the db, must not be {@literal null}
          * @return this {@link Builder}
          * @throws IllegalArgumentException if {@code connectionFactory} is {@code null}
+         * @since 0.9
          */
         public Builder connectionFactory(ConnectionFactory connectionFactory) {
             this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
@@ -465,7 +463,7 @@ public final class ConnectionPoolConfiguration {
         }
 
         private void validate() {
-            Assert.requireNonNull(this.connectionFactory, "connection factory must not be null");
+            Assert.requireNonNull(this.connectionFactory, "connectionFactory must not be null");
 
             if (this.registerJmx) {
                 Assert.requireNonNull(this.name, "name must not be null when registering to JMX");
@@ -484,7 +482,7 @@ public final class ConnectionPoolConfiguration {
         public String toString() {
             return "Builder{" +
                 "acquireRetry='" + this.acquireRetry + '\'' +
-                "connectionFactory='" + this.connectionFactory + '\'' +
+                ", connectionFactory='" + this.connectionFactory + '\'' +
                 ", clock='" + this.clock + '\'' +
                 ", initialSize='" + this.initialSize + '\'' +
                 ", maxSize='" + this.maxSize + '\'' +
