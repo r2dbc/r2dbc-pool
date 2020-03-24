@@ -40,8 +40,8 @@
         <mockito.version>3.2.4</mockito.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <r2dbc-spi.version>0.8.0.RELEASE</r2dbc-spi.version>
-        <reactor.version>Dysprosium-SR2</reactor.version>
+        <r2dbc-spi.version>0.8.1.RELEASE</r2dbc-spi.version>
+        <reactor.version>Dysprosium-SR6</reactor.version>
     </properties>
 
     <licenses>
