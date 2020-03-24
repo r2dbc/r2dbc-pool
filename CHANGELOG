@@ -1,6 +1,23 @@
 R2DBC Pool Changelog
 =============================
 
+0.8.2.RELEASE
+------------------
+* Upgrade build and test dependencies #67
+* Release 0.8.2.RELEASE #66
+* Upgrade to Reactor Dysprosium-SR6 #65
+* Stage releases directly on maven central #64
+* Allow builder creation without ConnectionFactory #59
+
+0.8.1.RELEASE
+------------------
+* Upgrade to JUnit 5.6.0 #58
+* Upgrade to Reactor Dyprosium-SR4 #57
+* Upgrade to SPI 0.8.1.RELEASE #56
+* Use different container when releasing to maven central #55
+* Backport Travis support #53
+* Backport Jenkins support to 0.8.x #52
+
 0.8.0.RELEASE
 ------------------
 * Upgrade to Reactor Dysprosium SR2 #49
