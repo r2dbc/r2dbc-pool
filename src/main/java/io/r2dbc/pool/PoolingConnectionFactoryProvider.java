@@ -23,7 +23,7 @@ import io.r2dbc.spi.ConnectionFactoryProvider;
 import io.r2dbc.spi.Option;
 import io.r2dbc.spi.ValidationDepth;
 
-import java.util.Locale;
+import java.time.Duration;
 
 import static io.r2dbc.pool.ConnectionPoolConfiguration.Builder;
 import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
@@ -33,6 +33,7 @@ import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
  *
  * @author Mark Paluch
  * @author Rodolfo Beletatti
+ * @author Rodolpho S. Couto
  */
 public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvider {
 
@@ -55,6 +56,26 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
      * MaxSize {@link Option}.
      */
     public static final Option<Integer> MAX_SIZE = Option.valueOf("maxSize");
+
+    /**
+     * MaxLifeTime {@link Option}.
+     */
+    public static final Option<Duration> MAX_LIFE_TIME = Option.valueOf("maxLifeTime");
+
+    /**
+     * MaxAcquireTime {@link Option}.
+     */
+    public static final Option<Duration> MAX_ACQUIRE_TIME = Option.valueOf("maxAcquireTime");
+
+    /**
+     * MaxIdleTime {@link Option}.
+     */
+    public static final Option<Duration> MAX_IDLE_TIME = Option.valueOf("maxIdleTime");
+
+    /**
+     * MaxCreateConnectionTime {@link Option}.
+     */
+    public static final Option<Duration> MAX_CREATE_CONNECTION_TIME = Option.valueOf("maxCreateConnectionTime");
 
     /**
      * ValidationQuery {@link Option}.
@@ -111,49 +132,44 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         Builder builder = ConnectionPoolConfiguration.builder(connectionFactory);
 
         if (connectionFactoryOptions.hasOption(INITIAL_SIZE)) {
-            builder.initialSize(parseIntOption(connectionFactoryOptions, INITIAL_SIZE));
+            builder.initialSize(OptionParser.parseInt(connectionFactoryOptions, INITIAL_SIZE));
         }
 
         if (connectionFactoryOptions.hasOption(MAX_SIZE)) {
-            builder.maxSize(parseIntOption(connectionFactoryOptions, MAX_SIZE));
+            builder.maxSize(OptionParser.parseInt(connectionFactoryOptions, MAX_SIZE));
         }
 
         if (connectionFactoryOptions.hasOption(ACQUIRE_RETRY)) {
-            builder.acquireRetry(parseIntOption(connectionFactoryOptions, ACQUIRE_RETRY));
+            builder.acquireRetry(OptionParser.parseInt(connectionFactoryOptions, ACQUIRE_RETRY));
+        }
+
+        if (connectionFactoryOptions.hasOption(MAX_LIFE_TIME)) {
+            builder.maxLifeTime(OptionParser.parseDuration(connectionFactoryOptions, MAX_LIFE_TIME));
+        }
+
+        if (connectionFactoryOptions.hasOption(MAX_ACQUIRE_TIME)) {
+            builder.maxAcquireTime(OptionParser.parseDuration(connectionFactoryOptions, MAX_ACQUIRE_TIME));
+        }
+
+        if (connectionFactoryOptions.hasOption(MAX_IDLE_TIME)) {
+            builder.maxIdleTime(OptionParser.parseDuration(connectionFactoryOptions, MAX_IDLE_TIME));
+        }
+
+        if (connectionFactoryOptions.hasOption(MAX_CREATE_CONNECTION_TIME)) {
+            builder.maxCreateConnectionTime(
+                OptionParser.parseDuration(connectionFactoryOptions, MAX_CREATE_CONNECTION_TIME));
         }
 
         if (connectionFactoryOptions.hasOption(VALIDATION_QUERY)) {
-
-            String validationQuery = connectionFactoryOptions.getRequiredValue(VALIDATION_QUERY);
-            builder.validationQuery(validationQuery);
+            builder.validationQuery(connectionFactoryOptions.getRequiredValue(VALIDATION_QUERY));
         }
 
         if (connectionFactoryOptions.hasOption(VALIDATION_DEPTH)) {
-
-            Object validationDepth = connectionFactoryOptions.getRequiredValue(VALIDATION_DEPTH);
-
-            if (validationDepth instanceof String) {
-                validationDepth = ValidationDepth.valueOf(((String) validationDepth).toUpperCase(Locale.ENGLISH));
-            }
-
-            builder.validationDepth((ValidationDepth) validationDepth);
+            builder.validationDepth(
+                OptionParser.parseEnum(connectionFactoryOptions, VALIDATION_DEPTH, ValidationDepth.class));
         }
 
         return builder.build();
-    }
-
-    private static int parseIntOption(ConnectionFactoryOptions options, Option<?> option) {
-
-        Object value = options.getRequiredValue(option);
-        if (value instanceof Number) {
-            return ((Integer) value);
-        }
-
-        if (value instanceof String) {
-            return Integer.parseInt(value.toString());
-        }
-
-        throw new IllegalArgumentException(String.format("Invalid %s option: %s", option.name(), value));
     }
 
     @Override

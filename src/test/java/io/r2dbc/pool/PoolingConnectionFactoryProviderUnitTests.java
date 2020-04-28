@@ -26,6 +26,8 @@ import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
+
 import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -35,6 +37,7 @@ import static org.mockito.Mockito.when;
  * Unit tests for {@link PoolingConnectionFactoryProvider}.
  *
  * @author Mark Paluch
+ * @author Rodolpho S. Couto
  */
 final class PoolingConnectionFactoryProviderUnitTests {
 
@@ -78,7 +81,8 @@ final class PoolingConnectionFactoryProviderUnitTests {
     @Test
     void shouldApplyValidationDepth() {
 
-        ConnectionFactoryOptions options = ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?validationDepth=remote");
+        ConnectionFactoryOptions options =
+            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?validationDepth=remote");
 
         ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
 
@@ -100,12 +104,59 @@ final class PoolingConnectionFactoryProviderUnitTests {
     @Test
     void shouldApplyInitialSizeAndMaxSize() {
 
-        ConnectionFactoryOptions options = ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?initialSize=2&maxSize=12");
+        ConnectionFactoryOptions options =
+            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?initialSize=2&maxSize=12");
 
         ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
 
         assertThat(configuration)
             .hasFieldOrPropertyWithValue("initialSize", 2)
             .hasFieldOrPropertyWithValue("maxSize", 12);
+    }
+
+    @Test
+    void shouldApplyMaxLifeTime() {
+
+        ConnectionFactoryOptions options = ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?maxLifeTime=PT30M");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("maxLifeTime", Duration.ofMinutes(30));
+    }
+
+    @Test
+    void shouldApplyMaxAcquireTime() {
+
+        ConnectionFactoryOptions options =
+            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?maxAcquireTime=PT30M");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("maxAcquireTime", Duration.ofMinutes(30));
+    }
+
+    @Test
+    void shouldApplyMaxIdleTime() {
+
+        ConnectionFactoryOptions options = ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?maxIdleTime=PT30M");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("maxIdleTime", Duration.ofMinutes(30));
+    }
+
+    @Test
+    void shouldApplyMaxCreateConnectionTime() {
+
+        ConnectionFactoryOptions options =
+            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?maxCreateConnectionTime=PT30M");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ofMinutes(30));
     }
 }
