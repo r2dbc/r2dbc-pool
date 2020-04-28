@@ -45,15 +45,19 @@ Mono<Connection> connectionMono = Mono.from(connectionFactory.create());
 
 **Supported ConnectionFactory Discovery Options**
 
-| Option            | Description
-| ------            | -----------
-| `driver`          | Must be `pool`
-| `protocol`        | Driver identifier. The value is propagated by the pool to the `driver` property.
-| `acquireRetry`    | Number of retries if the first connection acquiry attempt fails. Defaults to `1`.
-| `initialSize`     | Initial pool size. Defaults to `10`.
-| `maxSize`         | Maximum pool size. Defaults to `10`.
-| `validationDepth` | Validation depth used to validate an R2DBC connection. Defaults to `LOCAL`.
-| `validationQuery` | Query that will be executed just before a connection is given to you from the pool to validate that the connection to the database is still alive.
+| Option                    | Description
+| ------                    | -----------
+| `driver`                  | Must be `pool`
+| `protocol`                | Driver identifier. The value is propagated by the pool to the `driver` property.
+| `acquireRetry`            | Number of retries if the first connection acquiry attempt fails. Defaults to `1`.
+| `initialSize`             | Initial pool size. Defaults to `10`.
+| `maxSize`                 | Maximum pool size. Defaults to `10`.
+| `maxLifeTime`             | Maximum lifetime of the connection in the pool.
+| `maxIdleTime`             | Maximum idle time of the connection in the pool.
+| `maxAcquireTime`          | Maximum time to acquire connection from pool.
+| `maxCreateConnectionTime` | Maximum time to create a new connection.
+| `validationDepth`         | Validation depth used to validate an R2DBC connection. Defaults to `LOCAL`.
+| `validationQuery`         | Query that will be executed just before a connection is given to you from the pool to validate that the connection to the database is still alive.
 
 All other properties are driver-specific.
 
