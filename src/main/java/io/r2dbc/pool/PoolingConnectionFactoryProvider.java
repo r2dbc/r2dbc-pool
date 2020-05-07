@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 the original author or authors.
+ * Copyright 2019-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,21 +59,29 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
 
     /**
      * MaxLifeTime {@link Option}.
+     *
+     * @since 0.8.3
      */
     public static final Option<Duration> MAX_LIFE_TIME = Option.valueOf("maxLifeTime");
 
     /**
      * MaxAcquireTime {@link Option}.
+     *
+     * @since 0.8.3
      */
     public static final Option<Duration> MAX_ACQUIRE_TIME = Option.valueOf("maxAcquireTime");
 
     /**
      * MaxIdleTime {@link Option}.
+     *
+     * @since 0.8.3
      */
     public static final Option<Duration> MAX_IDLE_TIME = Option.valueOf("maxIdleTime");
 
     /**
      * MaxCreateConnectionTime {@link Option}.
+     *
+     * @since 0.8.3
      */
     public static final Option<Duration> MAX_CREATE_CONNECTION_TIME = Option.valueOf("maxCreateConnectionTime");
 
@@ -130,44 +138,17 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         }
 
         Builder builder = ConnectionPoolConfiguration.builder(connectionFactory);
+        OptionMapper mapper = OptionMapper.create(newOptions);
 
-        if (connectionFactoryOptions.hasOption(INITIAL_SIZE)) {
-            builder.initialSize(OptionParser.parseInt(connectionFactoryOptions, INITIAL_SIZE));
-        }
-
-        if (connectionFactoryOptions.hasOption(MAX_SIZE)) {
-            builder.maxSize(OptionParser.parseInt(connectionFactoryOptions, MAX_SIZE));
-        }
-
-        if (connectionFactoryOptions.hasOption(ACQUIRE_RETRY)) {
-            builder.acquireRetry(OptionParser.parseInt(connectionFactoryOptions, ACQUIRE_RETRY));
-        }
-
-        if (connectionFactoryOptions.hasOption(MAX_LIFE_TIME)) {
-            builder.maxLifeTime(OptionParser.parseDuration(connectionFactoryOptions, MAX_LIFE_TIME));
-        }
-
-        if (connectionFactoryOptions.hasOption(MAX_ACQUIRE_TIME)) {
-            builder.maxAcquireTime(OptionParser.parseDuration(connectionFactoryOptions, MAX_ACQUIRE_TIME));
-        }
-
-        if (connectionFactoryOptions.hasOption(MAX_IDLE_TIME)) {
-            builder.maxIdleTime(OptionParser.parseDuration(connectionFactoryOptions, MAX_IDLE_TIME));
-        }
-
-        if (connectionFactoryOptions.hasOption(MAX_CREATE_CONNECTION_TIME)) {
-            builder.maxCreateConnectionTime(
-                OptionParser.parseDuration(connectionFactoryOptions, MAX_CREATE_CONNECTION_TIME));
-        }
-
-        if (connectionFactoryOptions.hasOption(VALIDATION_QUERY)) {
-            builder.validationQuery(connectionFactoryOptions.getRequiredValue(VALIDATION_QUERY));
-        }
-
-        if (connectionFactoryOptions.hasOption(VALIDATION_DEPTH)) {
-            builder.validationDepth(
-                OptionParser.parseEnum(connectionFactoryOptions, VALIDATION_DEPTH, ValidationDepth.class));
-        }
+        mapper.from(INITIAL_SIZE).as(OptionMapper::toInteger).to(builder::initialSize);
+        mapper.from(MAX_SIZE).as(OptionMapper::toInteger).to(builder::maxSize);
+        mapper.from(ACQUIRE_RETRY).as(OptionMapper::toInteger).to(builder::acquireRetry);
+        mapper.from(MAX_LIFE_TIME).as(OptionMapper::toDuration).to(builder::maxLifeTime);
+        mapper.from(MAX_ACQUIRE_TIME).as(OptionMapper::toDuration).to(builder::maxAcquireTime);
+        mapper.from(MAX_IDLE_TIME).as(OptionMapper::toDuration).to(builder::maxIdleTime);
+        mapper.from(MAX_CREATE_CONNECTION_TIME).as(OptionMapper::toDuration).to(builder::maxCreateConnectionTime);
+        mapper.from(VALIDATION_QUERY).to(builder::validationQuery);
+        mapper.from(VALIDATION_DEPTH).as(validationDepth -> OptionMapper.toEnum(validationDepth, ValidationDepth.class)).to(builder::validationDepth);
 
         return builder.build();
     }

@@ -15,7 +15,7 @@ Configuration of the `ConnectionPool` can be accomplished in several ways:
 **URL Connection Factory Discovery**
 
 ```java
-ConnectionFactory connectionFactory = ConnectionFactories.get("r2dbc:pool:<my-driver>://<host>:<port>/<database>");
+ConnectionFactory connectionFactory = ConnectionFactories.get("r2dbc:pool:<my-driver>://<host>:<port>/<database>[?maxIdleTime=PT60S[&…]");
 
 Publisher<? extends Connection> connectionPublisher = connectionFactory.create();
 ```
