@@ -19,6 +19,7 @@ package io.r2dbc.pool;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
+import io.r2dbc.spi.R2dbcTimeoutException;
 import io.r2dbc.spi.ValidationDepth;
 import io.r2dbc.spi.Wrapped;
 import io.r2dbc.spi.test.MockConnection;
@@ -259,7 +260,7 @@ final class ConnectionPoolUnitTests {
         StepVerifier.withVirtualTime(() -> new ConnectionPool(configuration).create())
             .expectSubscription()
             .thenAwait(Duration.ofMinutes(11))
-            .expectError(TimeoutException.class)
+            .expectError(R2dbcTimeoutException.class)
             .verify();
 
         verify(connectionFactoryMock).create();
@@ -338,7 +339,7 @@ final class ConnectionPoolUnitTests {
         // slow connection retrieval
         pool.create()
             .as(StepVerifier::create)
-            .expectError(TimeoutException.class)
+            .expectError(R2dbcTimeoutException.class)
             .verify();
 
         assertThat(counter).hasValue(2);
