@@ -19,6 +19,7 @@ package io.r2dbc.pool;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
+import io.r2dbc.spi.R2dbcTimeoutException;
 import io.r2dbc.spi.Wrapped;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -42,6 +43,7 @@ import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
@@ -85,8 +87,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             });
         }
 
-        Function<Connection, Mono<Void>> allocateValidation = getValidation(configuration);
-
+        Function<Connection, Mono<Void>> allocateValidation = getValidationFunction(configuration);
 
         Mono<Connection> create = Mono.defer(() -> {
 
@@ -107,14 +108,28 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                     if (ref != null && emitted.compareAndSet(ref, null)) {
                         ref.release().subscribe();
                     }
-                });
+                }).name(String.format("Connection Acquisition from [%s]", configuration.getConnectionFactory()));
 
             if (!this.maxAcquireTime.isZero()) {
-                mono = mono.timeout(this.maxAcquireTime);
+                mono = mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(String.format("Connection Acquisition timed" +
+                    " out after %dms", this.maxAcquireTime.toMillis()), e));
             }
             return mono;
         });
         this.create = configuration.getAcquireRetry() > 0 ? create.retry(configuration.getAcquireRetry()) : create;
+    }
+
+    private Function<Connection, Mono<Void>> getValidationFunction(ConnectionPoolConfiguration configuration) {
+        Function<Connection, Mono<Void>> allocateValidation;
+
+        if (!this.maxAcquireTime.isZero()) {
+            allocateValidation = getValidation(configuration).andThen(mono -> mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(String.format(
+                "Validation timed out after %dms", this.maxAcquireTime.toMillis()), e)));
+        } else {
+            allocateValidation = getValidation(configuration);
+        }
+
+        return allocateValidation;
     }
 
     private Function<Connection, Mono<Void>> getValidation(ConnectionPoolConfiguration configuration) {
@@ -126,7 +141,6 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         return connection -> Validation.validate(connection, configuration.getValidationDepth());
     }
-
 
     /**
      * Warms up the {@link ConnectionPool}, if needed. This instructs the pool to check for a minimum size and allocate
@@ -154,7 +168,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         }
 
         // set timeout for create connection
-        Mono<Connection> allocator = Mono.from(factory.create());
+        Mono<Connection> allocator = Mono.<Connection>from(factory.create()).name("Connection Allocation");
         if (!maxCreateConnectionTime.isZero()) {
             allocator = allocator.timeout(maxCreateConnectionTime);
         }

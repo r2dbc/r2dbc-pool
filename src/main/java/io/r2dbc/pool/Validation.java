@@ -30,7 +30,8 @@ import java.util.Optional;
 final class Validation {
 
     static Mono<Void> validate(Connection connection, String validationQuery) {
-        return Flux.from(connection.createStatement(validationQuery).execute()).flatMap(it -> it.map((row, rowMetadata) -> Optional.ofNullable(row.get(0)))).then();
+        return Flux.from(connection.createStatement(validationQuery).execute()).flatMap(it -> it.map((row, rowMetadata) -> Optional.ofNullable(row.get(0)))).then().name(String.format("Connection " +
+            "Validation [%s]", validationQuery));
     }
 
     static Mono<Void> validate(Connection connection, ValidationDepth depth) {
@@ -42,6 +43,6 @@ final class Validation {
             }
 
             sink.error(new R2dbcNonTransientResourceException("Connection validation failed"));
-        }).then();
+        }).then().name(String.format("Connection Validation [%s]", depth));
     }
 }
