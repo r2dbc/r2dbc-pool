@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 the original author or authors.
+ * Copyright 2019-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import io.r2dbc.spi.ConnectionFactoryProvider;
 import io.r2dbc.spi.Option;
 import io.r2dbc.spi.ValidationDepth;
 
-import java.util.Locale;
+import java.time.Duration;
 
 import static io.r2dbc.pool.ConnectionPoolConfiguration.Builder;
 import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
@@ -33,6 +33,7 @@ import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
  *
  * @author Mark Paluch
  * @author Rodolfo Beletatti
+ * @author Rodolpho S. Couto
  */
 public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvider {
 
@@ -55,6 +56,34 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
      * MaxSize {@link Option}.
      */
     public static final Option<Integer> MAX_SIZE = Option.valueOf("maxSize");
+
+    /**
+     * MaxLifeTime {@link Option}.
+     *
+     * @since 0.9
+     */
+    public static final Option<Duration> MAX_LIFE_TIME = Option.valueOf("maxLifeTime");
+
+    /**
+     * MaxAcquireTime {@link Option}.
+     *
+     * @since 0.9
+     */
+    public static final Option<Duration> MAX_ACQUIRE_TIME = Option.valueOf("maxAcquireTime");
+
+    /**
+     * MaxIdleTime {@link Option}.
+     *
+     * @since 0.9
+     */
+    public static final Option<Duration> MAX_IDLE_TIME = Option.valueOf("maxIdleTime");
+
+    /**
+     * MaxCreateConnectionTime {@link Option}.
+     *
+     * @since 0.9
+     */
+    public static final Option<Duration> MAX_CREATE_CONNECTION_TIME = Option.valueOf("maxCreateConnectionTime");
 
     /**
      * ValidationQuery {@link Option}.
@@ -109,51 +138,19 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         }
 
         Builder builder = ConnectionPoolConfiguration.builder(connectionFactory);
+        OptionMapper mapper = OptionMapper.create(newOptions);
 
-        if (connectionFactoryOptions.hasOption(INITIAL_SIZE)) {
-            builder.initialSize(parseIntOption(connectionFactoryOptions, INITIAL_SIZE));
-        }
-
-        if (connectionFactoryOptions.hasOption(MAX_SIZE)) {
-            builder.maxSize(parseIntOption(connectionFactoryOptions, MAX_SIZE));
-        }
-
-        if (connectionFactoryOptions.hasOption(ACQUIRE_RETRY)) {
-            builder.acquireRetry(parseIntOption(connectionFactoryOptions, ACQUIRE_RETRY));
-        }
-
-        if (connectionFactoryOptions.hasOption(VALIDATION_QUERY)) {
-
-            String validationQuery = connectionFactoryOptions.getRequiredValue(VALIDATION_QUERY);
-            builder.validationQuery(validationQuery);
-        }
-
-        if (connectionFactoryOptions.hasOption(VALIDATION_DEPTH)) {
-
-            Object validationDepth = connectionFactoryOptions.getRequiredValue(VALIDATION_DEPTH);
-
-            if (validationDepth instanceof String) {
-                validationDepth = ValidationDepth.valueOf(((String) validationDepth).toUpperCase(Locale.ENGLISH));
-            }
-
-            builder.validationDepth((ValidationDepth) validationDepth);
-        }
+        mapper.from(INITIAL_SIZE).as(OptionMapper::toInteger).to(builder::initialSize);
+        mapper.from(MAX_SIZE).as(OptionMapper::toInteger).to(builder::maxSize);
+        mapper.from(ACQUIRE_RETRY).as(OptionMapper::toInteger).to(builder::acquireRetry);
+        mapper.from(MAX_LIFE_TIME).as(OptionMapper::toDuration).to(builder::maxLifeTime);
+        mapper.from(MAX_ACQUIRE_TIME).as(OptionMapper::toDuration).to(builder::maxAcquireTime);
+        mapper.from(MAX_IDLE_TIME).as(OptionMapper::toDuration).to(builder::maxIdleTime);
+        mapper.from(MAX_CREATE_CONNECTION_TIME).as(OptionMapper::toDuration).to(builder::maxCreateConnectionTime);
+        mapper.from(VALIDATION_QUERY).to(builder::validationQuery);
+        mapper.from(VALIDATION_DEPTH).as(validationDepth -> OptionMapper.toEnum(validationDepth, ValidationDepth.class)).to(builder::validationDepth);
 
         return builder.build();
-    }
-
-    private static int parseIntOption(ConnectionFactoryOptions options, Option<?> option) {
-
-        Object value = options.getRequiredValue(option);
-        if (value instanceof Number) {
-            return ((Integer) value);
-        }
-
-        if (value instanceof String) {
-            return Integer.parseInt(value.toString());
-        }
-
-        throw new IllegalArgumentException(String.format("Invalid %s option: %s", option.name(), value));
     }
 
     @Override
