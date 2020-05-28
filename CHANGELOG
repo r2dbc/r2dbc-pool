@@ -1,6 +1,12 @@
 R2DBC Pool Changelog
 =============================
 
+0.8.3.RELEASE
+------------------
+* Upgrade dependencies #72
+* Added missing options to PoolingConnectionFactoryProvider #69
+* Pool doesn't reconnect when DB server is restarted #68
+
 0.8.2.RELEASE
 ------------------
 * Upgrade build and test dependencies #67
