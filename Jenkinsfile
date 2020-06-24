@@ -3,7 +3,7 @@ pipeline {
 
 	triggers {
 		pollSCM 'H/10 * * * *'
-		upstream(upstreamProjects: "r2dbc-spi/master", threshold: hudson.model.Result.SUCCESS)
+		upstream(upstreamProjects: "r2dbc-spi/main", threshold: hudson.model.Result.SUCCESS)
 	}
 
 	options {
@@ -29,7 +29,7 @@ pipeline {
 		stage('Deploy') {
 			when {
 				anyOf {
-					branch 'master'
+					branch 'main'
 					branch 'release'
 				}
 				not { triggeredBy 'UpstreamCause' }
