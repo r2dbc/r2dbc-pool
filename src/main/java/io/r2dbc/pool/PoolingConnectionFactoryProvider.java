@@ -134,7 +134,7 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         // Run discovery again to find the actual connection factory
         ConnectionFactory connectionFactory = ConnectionFactories.find(newOptions);
         if (connectionFactory == null) {
-            throw new IllegalArgumentException(String.format("Could not find delegating driver %s", driverDelegate));
+            throw new IllegalArgumentException(String.format("Could not find delegating driver [%s]", driverDelegate));
         }
 
         Builder builder = ConnectionPoolConfiguration.builder(connectionFactory);

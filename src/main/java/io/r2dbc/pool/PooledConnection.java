@@ -26,6 +26,8 @@ import io.r2dbc.spi.Wrapped;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 import reactor.pool.PooledRef;
+import reactor.util.Logger;
+import reactor.util.Loggers;
 
 /**
  * Pooled {@link Connection} implementation. Performs a cleanup on {@link #close()} if used transactionally.
@@ -34,6 +36,8 @@ import reactor.pool.PooledRef;
  * @author Mark Paluch
  */
 final class PooledConnection implements Connection, Wrapped<Connection> {
+
+    private static final Logger logger = Loggers.getLogger(PooledConnection.class);
 
     private final PooledRef<Connection> ref;
 
@@ -58,7 +62,7 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
 
                 return cleanup.doOnSubscribe(ignore -> this.closed = true).then(this.ref.release());
 
-            })).onErrorResume(throwable -> ref.invalidate());
+            })).onErrorResume(throwable -> ref.invalidate()).doOnSubscribe(subscription -> logger.debug("Releasing connection"));
         });
     }
 

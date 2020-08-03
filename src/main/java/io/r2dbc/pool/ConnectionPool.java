@@ -30,6 +30,7 @@ import reactor.pool.PoolConfig;
 import reactor.pool.PoolMetricsRecorder;
 import reactor.pool.PooledRef;
 import reactor.pool.PooledRefMetadata;
+import reactor.util.Logger;
 import reactor.util.Loggers;
 
 import javax.management.JMException;
@@ -56,6 +57,8 @@ import java.util.function.Function;
  * @author Tadaya Tsuyukubo
  */
 public class ConnectionPool implements ConnectionFactory, Disposable, Closeable, Wrapped<ConnectionFactory> {
+
+    private static final Logger logger = Loggers.getLogger(ConnectionPool.class);
 
     private final ConnectionFactory factory;
 
@@ -95,6 +98,12 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
             Mono<Connection> mono = this.connectionPool.acquire()
                 .doOnNext(emitted::set)
+                .doOnSubscribe(subscription -> {
+
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Obtaining new connection from the driver");
+                    }
+                })
                 .flatMap(ref -> {
 
                     PooledConnection connection = new PooledConnection(ref);
