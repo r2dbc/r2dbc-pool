@@ -1,6 +1,16 @@
 R2DBC Pool Changelog
 =============================
 
+0.8.4.RELEASE
+------------------
+* Upgrade to Mockito 3.5.10 #87
+* Upgrade to AssertJ 3.17.2 #86
+* Upgrade to Reactor Dysprosium SR11 #85
+* Add debug logging #82
+* Ensure no snapshots get referenced in release builds #78
+* Rename master branch to main #74
+* Upgrade to Reactor Dysprosium SR9 #73
+
 0.8.3.RELEASE
 ------------------
 * Upgrade dependencies #72
