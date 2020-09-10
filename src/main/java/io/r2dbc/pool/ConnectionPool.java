@@ -209,7 +209,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         customizer.accept(builder);
 
-        return builder.fifo();
+        return builder.buildPool();
     }
 
     @Override
