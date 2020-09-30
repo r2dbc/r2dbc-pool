@@ -16,7 +16,7 @@ public interface ConnectionPoolMXBean {
 
     /**
      * Measure the current number of connections that have been successfully
-     * {@link ConnectionPool#create()} acquired} and are in active use.
+     * {@link ConnectionPool#create()} acquired and are in active use.
      *
      * @return the number of acquired connections
      * @see PoolMetrics#acquiredSize()
