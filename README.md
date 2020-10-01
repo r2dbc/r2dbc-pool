@@ -52,10 +52,10 @@ Mono<Connection> connectionMono = Mono.from(connectionFactory.create());
 | `acquireRetry`            | Number of retries if the first connection acquiry attempt fails. Defaults to `1`.
 | `initialSize`             | Initial pool size. Defaults to `10`.
 | `maxSize`                 | Maximum pool size. Defaults to `10`.
-| `maxLifeTime`             | Maximum lifetime of the connection in the pool.
-| `maxIdleTime`             | Maximum idle time of the connection in the pool.
-| `maxAcquireTime`          | Maximum time to acquire connection from pool.
-| `maxCreateConnectionTime` | Maximum time to create a new connection.
+| `maxLifeTime`             | Maximum lifetime of the connection in the pool. Negative values result in closing the connection immediately after release.
+| `maxIdleTime`             | Maximum idle time of the connection in the pool. Negative values result in closing the connection immediately after release.
+| `maxAcquireTime`          | Maximum time to acquire connection from pool. Negative values result in not applying a timeout.
+| `maxCreateConnectionTime` | Maximum time to create a new connection. Negative values result in not applying a timeout.
 | `validationDepth`         | Validation depth used to validate an R2DBC connection. Defaults to `LOCAL`.
 | `validationQuery`         | Query that will be executed just before a connection is given to you from the pool to validate that the connection to the database is still alive.
 

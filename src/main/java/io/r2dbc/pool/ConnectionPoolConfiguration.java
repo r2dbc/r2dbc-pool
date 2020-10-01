@@ -31,6 +31,7 @@ import java.util.function.Consumer;
 
 /**
  * Connection pool configuration.
+ * <p>Negative {@link Duration} values for timeouts are considered as no timeout.
  *
  * @author Mark Paluch
  * @author Tadaya Tsuyukubo
@@ -38,6 +39,11 @@ import java.util.function.Consumer;
  * @author Rodolfo Beletatti
  */
 public final class ConnectionPoolConfiguration {
+
+    /**
+     * Constant indicating that timeout should not apply.
+     */
+    public static final Duration NO_TIMEOUT = Duration.ofNanos(-1);
 
     private final int acquireRetry;
 
@@ -197,11 +203,11 @@ public final class ConnectionPoolConfiguration {
 
         private Duration maxIdleTime = Duration.ofMinutes(30);
 
-        private Duration maxCreateConnectionTime = Duration.ZERO;  // ZERO indicates no-timeout
+        private Duration maxCreateConnectionTime = NO_TIMEOUT;  // negative value indicates no-timeout
 
-        private Duration maxAcquireTime = Duration.ZERO;  // ZERO indicates no-timeout
+        private Duration maxAcquireTime = NO_TIMEOUT;  // negative value indicates no-timeout
 
-        private Duration maxLifeTime = Duration.ZERO;  // ZERO indicates no-lifetime
+        private Duration maxLifeTime = NO_TIMEOUT;  // negative value indicates no-timeout
 
         private PoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
@@ -242,7 +248,7 @@ public final class ConnectionPoolConfiguration {
          * @throws IllegalArgumentException if {@code clock} is null.
          */
         public Builder clock(Clock clock) {
-            this.clock = Assert.requireNonNull(clock,"Clock must not be null");
+            this.clock = Assert.requireNonNull(clock, "Clock must not be null");
             return this;
         }
 
@@ -291,33 +297,26 @@ public final class ConnectionPoolConfiguration {
         /**
          * Configure a idle {@link Duration timeout}. Defaults to 30 minutes.
          *
-         * @param maxIdleTime the maximum idle time, must not be {@code null} and must not be negative. {@link Duration#ZERO} means no idle timeout.
+         * @param maxIdleTime the maximum idle time. {@link Duration#ZERO} means immediate connection disposal. A negative or a {@code null} value results in not applying a timeout.
          * @return this {@link Builder}
          * @throws IllegalArgumentException if {@code maxIdleTime} is {@code null} or negative value.
          */
-        public Builder maxIdleTime(Duration maxIdleTime) {
-            Assert.requireNonNull(maxIdleTime, "maxIdleTime must not be null");
-            if (maxIdleTime.isNegative()) {
-                throw new IllegalArgumentException("maxIdleTime must not be negative");
-            }
-            this.maxIdleTime = maxIdleTime;
+        public Builder maxIdleTime(@Nullable Duration maxIdleTime) {
+            this.maxIdleTime = applyDefault(maxIdleTime);
             return this;
         }
 
         /**
          * Configure {@link Duration timeout} for creating a new {@link Connection} from {@link ConnectionFactory}. Default is no timeout.
          *
-         * @param maxCreateConnectionTime the maximum time to create a new {@link Connection} from {@link ConnectionFactory}, must not be {@code null} and must not be negative.
-         *                                {@link Duration#ZERO} indicates no timeout.
+         * @param maxCreateConnectionTime the maximum time to create a new {@link Connection} from {@link ConnectionFactory}.
+         *                                {@link Duration#ZERO} indicates immediate failure if the connection is not created immediately. A negative or a {@code null} value results in not applying
+         *                                a timeout.
          * @return this {@link Builder}
          * @throws IllegalArgumentException if {@code maxCreateConnectionTime} is {@code null} or negative.
          */
-        public Builder maxCreateConnectionTime(Duration maxCreateConnectionTime) {
-            Assert.requireNonNull(maxCreateConnectionTime, "maxCreateConnectionTime must not be null");
-            if (maxCreateConnectionTime.isNegative()) {
-                throw new IllegalArgumentException("maxCreateConnectionTime must not be negative");
-            }
-            this.maxCreateConnectionTime = maxCreateConnectionTime;
+        public Builder maxCreateConnectionTime(@Nullable Duration maxCreateConnectionTime) {
+            this.maxCreateConnectionTime = applyDefault(maxCreateConnectionTime);
             return this;
         }
 
@@ -327,34 +326,26 @@ public final class ConnectionPoolConfiguration {
          * When acquiring a {@link Connection} requires obtaining a new {@link Connection} from underlying {@link ConnectionFactory}, this timeout
          * also applies to get the new one.
          *
-         * @param maxAcquireTime the maximum time to acquire connection from pool, must not be {@code null} and must not be negative.
-         *                       {@link Duration#ZERO} indicates no timeout.
+         * @param maxAcquireTime the maximum time to acquire connection from pool. {@link Duration#ZERO} indicates that the connection must be immediately available
+         *                       otherwise acquisition fails. A negative or a {@code null} value results in not applying a timeout.
          * @return this {@link Builder}
          * @throws IllegalArgumentException if {@code maxAcquireTime} is negative.
          */
-        public Builder maxAcquireTime(Duration maxAcquireTime) {
-            Assert.requireNonNull(maxAcquireTime, "maxAcquireTime must not be null");
-            if (maxAcquireTime.isNegative()) {
-                throw new IllegalArgumentException("maxAcquireTime must not be negative");
-            }
-            this.maxAcquireTime = maxAcquireTime;
+        public Builder maxAcquireTime(@Nullable Duration maxAcquireTime) {
+            this.maxAcquireTime = applyDefault(maxAcquireTime);
             return this;
         }
 
         /**
          * Configure {@link Duration lifetime} of the pooled {@link Connection} in the pool. Default is no timeout.
          *
-         * @param maxLifeTime the maximum lifetime of the connection in the pool, must not be {@code null} and must not be negative.
-         *                    {@link Duration#ZERO} indicates no lifetime.
+         * @param maxLifeTime the maximum lifetime of the connection in the pool,.
+         *                    {@link Duration#ZERO} indicates immediate connection disposal. A negative or a {@code null} value results in not applying a timeout.
          * @return this {@link Builder}
          * @throws IllegalArgumentException if {@code maxLifeTime} is negative.
          */
         public Builder maxLifeTime(Duration maxLifeTime) {
-            Assert.requireNonNull(maxLifeTime, "maxLifeTime must not be null");
-            if (maxLifeTime.isNegative()) {
-                throw new IllegalArgumentException("maxLifeTime must not be negative");
-            }
-            this.maxLifeTime = maxLifeTime;
+            this.maxLifeTime = applyDefault(maxLifeTime);
             return this;
         }
 
@@ -494,5 +485,11 @@ public final class ConnectionPoolConfiguration {
                 ", validationQuery='" + this.validationQuery + '\'' +
                 '}';
         }
+
+        private static Duration applyDefault(@Nullable Duration duration) {
+            return duration == null ? NO_TIMEOUT : duration;
+        }
+
     }
+
 }

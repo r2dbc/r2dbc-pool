@@ -119,7 +119,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                     }
                 }).name(String.format("Connection Acquisition from [%s]", configuration.getConnectionFactory()));
 
-            if (!this.maxAcquireTime.isZero()) {
+            if (!this.maxAcquireTime.isNegative()) {
                 mono = mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(String.format("Connection Acquisition timed" +
                     " out after %dms", this.maxAcquireTime.toMillis()), e));
             }
@@ -131,7 +131,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
     private Function<Connection, Mono<Void>> getValidationFunction(ConnectionPoolConfiguration configuration) {
         Function<Connection, Mono<Void>> allocateValidation;
 
-        if (!this.maxAcquireTime.isZero()) {
+        if (!this.maxAcquireTime.isNegative()) {
             allocateValidation = getValidation(configuration).andThen(mono -> mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(String.format(
                 "Validation timed out after %dms", this.maxAcquireTime.toMillis()), e)));
         } else {
@@ -178,7 +178,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         // set timeout for create connection
         Mono<Connection> allocator = Mono.<Connection>from(factory.create()).name("Connection Allocation");
-        if (!maxCreateConnectionTime.isZero()) {
+        if (!maxCreateConnectionTime.isNegative()) {
             allocator = allocator.timeout(maxCreateConnectionTime);
         }
 
@@ -189,8 +189,13 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         BiPredicate<Connection, PooledRefMetadata> evictionPredicate = (connection, metadata) -> {
             long maxIdleTimeMills = maxIdleTime.toMillis();
             long maxLifeTimeMillis = maxLifeTime.toMillis();
-            boolean isIdleTimeExceeded = maxIdleTimeMills != 0 && metadata.idleTime() >= maxIdleTimeMills;
-            boolean isLifeTimeExceeded = maxLifeTimeMillis != 0 && metadata.lifeTime() >= maxLifeTimeMillis;
+
+            if (maxIdleTimeMills == 0 || maxLifeTimeMillis == 0) {
+                return true;
+            }
+
+            boolean isIdleTimeExceeded = maxIdleTimeMills > 0 && metadata.idleTime() >= maxIdleTimeMills;
+            boolean isLifeTimeExceeded = maxLifeTimeMillis > 0 && metadata.lifeTime() >= maxLifeTimeMillis;
             return isIdleTimeExceeded || isLifeTimeExceeded;
         };
 

@@ -241,6 +241,31 @@ final class ConnectionPoolUnitTests {
 
     @Test
     @SuppressWarnings("unchecked")
+    void shouldTimeoutCreateConnectionUsingZeroTimeout() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+        when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.defer(() ->
+            Mono.delay(Duration.ofDays(1)).thenReturn(connectionMock))
+        );
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .maxCreateConnectionTime(Duration.ZERO)
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        StepVerifier.withVirtualTime(pool::create)
+            .expectSubscription()
+            .thenAwait(Duration.ofSeconds(11))
+            .expectError(TimeoutException.class)
+            .verify();
+
+        verify(connectionFactoryMock).create();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void shouldTimeoutAcquireConnection() {
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
@@ -419,7 +444,7 @@ final class ConnectionPoolUnitTests {
     }
 
     @Test
-    void shouldConsiderMaxIdleTimeWithZero() {
+    void shouldConsiderNegativeMaxIdleTime() {
 
         MockConnection firstConnection = MockConnection.builder().valid(true).build();
         MockConnection secondConnection = MockConnection.builder().valid(true).build();
@@ -427,7 +452,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
             .initialSize(0)
-            .maxIdleTime(Duration.ZERO)
+            .maxIdleTime(Duration.ofMillis(-1))
             .build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
@@ -487,7 +512,7 @@ final class ConnectionPoolUnitTests {
             .clock(delayClock)
             .initialSize(0)
             .metricsRecorder(metricsRecorder)
-            .maxIdleTime(Duration.ZERO)  // do not evict by idle time
+            .maxIdleTime(Duration.ofSeconds(-1))  // do not evict by idle time
             .build();
 
         ConnectionPool pool = new ConnectionPool(configuration);
