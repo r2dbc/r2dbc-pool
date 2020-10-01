@@ -407,12 +407,43 @@ final class ConnectionPoolUnitTests {
         // should not be evicted
         assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
         assertThat(connectionFactory.getCreateCount()).isEqualTo(1);
+        assertThat(firstConnection.isCloseCalled()).isFalse();
 
         delayClock.setDelay(Duration.ofDays(3));
 
         // should be evicted and acquire new conn
         assertPoolCreatesConnectionSuccessfully(pool, secondConnection);
+        assertThat(firstConnection.isCloseCalled()).isTrue();
         assertThat(connectionFactory.getCreateCount()).isEqualTo(2);
+    }
+
+    @Test
+    void shouldConsiderMaxIdleTimeOnAcquiredConnections() {
+        DelayClock delayClock = new DelayClock();
+        SimplePoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
+
+        MockConnection firstConnection = MockConnection.builder().valid(true).build();
+        MockConnection secondConnection = MockConnection.builder().valid(true).build();
+
+        CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection, secondConnection);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .clock(delayClock)
+            .initialSize(0)
+            .metricsRecorder(metricsRecorder)
+            .maxIdleTime(Duration.ofDays(2))  // set idle to 2 days
+            .build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        Connection connection = pool.create().block();
+
+        delayClock.setDelay(Duration.ofDays(3));
+
+        // should not be evicted
+        StepVerifier.create(connection.close()).verifyComplete();
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+        assertThat(connectionFactory.getCreateCount()).isEqualTo(1);
+        assertThat(firstConnection.isCloseCalled()).isFalse();
     }
 
     @Test
