@@ -1,4 +1,4 @@
-# Reactive Relational Database Connectivity Connection Pool Implementation [![Build Status](https://travis-ci.org/r2dbc/r2dbc-pool.svg?branch=0.8.x)](https://travis-ci.org/r2dbc/r2dbc-pool) [![Maven Central](https://maven-badges.herokuapp.com/maven-central/io.r2dbc/r2dbc-pool/badge.svg)](https://maven-badges.herokuapp.com/maven-central/io.r2dbc/r2dbc-pool)
+# Reactive Relational Database Connectivity Connection Pool Implementation [![Java CI with Maven](https://github.com/r2dbc/r2dbc-pool/workflows/Java%20CI%20with%20Maven/badge.svg?branch=0.8.x)](https://github.com/r2dbc/r2dbc-pool/actions?query=workflow%3A%22Java+CI+with+Maven%22+branch%3A0.8.x) [![Maven Central](https://maven-badges.herokuapp.com/maven-central/io.r2dbc/r2dbc-pool/badge.svg)](https://maven-badges.herokuapp.com/maven-central/io.r2dbc/r2dbc-pool)
 
 This project contains a [R2DBC][r] connection pool using `reactor-pool` for reactive connection pooling.
 
@@ -107,9 +107,9 @@ If you'd rather like the latest snapshots of the upcoming major version, use our
 </dependency>
 
 <repository>
-  <id>spring-libs-snapshot</id>
-  <name>Spring Snapshot Repository</name>
-  <url>https://repo.spring.io/libs-snapshot</url>
+  <id>sonatype-nexus-snapshots</id>
+  <name>Sonatype OSS Snapshot Repository</name>
+  <url>https://oss.sonatype.org/content/repositories/snapshots</url>
 </repository>
 ```
 
