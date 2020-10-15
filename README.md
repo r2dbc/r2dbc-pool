@@ -1,4 +1,4 @@
-# Reactive Relational Database Connectivity Connection Pool Implementation [![Build Status](https://travis-ci.org/r2dbc/r2dbc-pool.svg?branch=main)](https://travis-ci.org/r2dbc/r2dbc-pool) [![Maven Central](https://maven-badges.herokuapp.com/maven-central/io.r2dbc/r2dbc-pool/badge.svg)](https://maven-badges.herokuapp.com/maven-central/io.r2dbc/r2dbc-pool)
+# Reactive Relational Database Connectivity Connection Pool Implementation [![Java CI with Maven](https://github.com/r2dbc/r2dbc-pool/workflows/Java%20CI%20with%20Maven/badge.svg?branch=main)](https://github.com/r2dbc/r2dbc-pool/actions?query=workflow%3A%22Java+CI+with+Maven%22+branch%3Amain) [![Maven Central](https://maven-badges.herokuapp.com/maven-central/io.r2dbc/r2dbc-pool/badge.svg)](https://maven-badges.herokuapp.com/maven-central/io.r2dbc/r2dbc-pool)
 
 This project contains a [R2DBC][r] connection pool using `reactor-pool` for reactive connection pooling.
 
@@ -52,10 +52,10 @@ Mono<Connection> connectionMono = Mono.from(connectionFactory.create());
 | `acquireRetry`            | Number of retries if the first connection acquiry attempt fails. Defaults to `1`.
 | `initialSize`             | Initial pool size. Defaults to `10`.
 | `maxSize`                 | Maximum pool size. Defaults to `10`.
-| `maxLifeTime`             | Maximum lifetime of the connection in the pool. Negative values result in closing the connection immediately after release.
-| `maxIdleTime`             | Maximum idle time of the connection in the pool. Negative values result in closing the connection immediately after release.
-| `maxAcquireTime`          | Maximum time to acquire connection from pool. Negative values result in not applying a timeout.
-| `maxCreateConnectionTime` | Maximum time to create a new connection. Negative values result in not applying a timeout.
+| `maxLifeTime`             | Maximum lifetime of the connection in the pool.
+| `maxIdleTime`             | Maximum idle time of the connection in the pool.
+| `maxAcquireTime`          | Maximum time to acquire connection from pool.
+| `maxCreateConnectionTime` | Maximum time to create a new connection.
 | `validationDepth`         | Validation depth used to validate an R2DBC connection. Defaults to `LOCAL`.
 | `validationQuery`         | Query that will be executed just before a connection is given to you from the pool to validate that the connection to the database is still alive.
 
@@ -107,9 +107,9 @@ If you'd rather like the latest snapshots of the upcoming major version, use our
 </dependency>
 
 <repository>
-  <id>spring-libs-snapshot</id>
-  <name>Spring Snapshot Repository</name>
-  <url>https://repo.spring.io/libs-snapshot</url>
+  <id>sonatype-nexus-snapshots</id>
+  <name>Sonatype OSS Snapshot Repository</name>
+  <url>https://oss.sonatype.org/content/repositories/snapshots</url>
 </repository>
 ```
 
