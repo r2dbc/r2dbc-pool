@@ -149,6 +149,10 @@ If you want to build with the regular `mvn` command, you will need [Maven v3.5.0
 
 _Also see [CONTRIBUTING.adoc](https://github.com/r2dbc/.github/blob/main/CONTRIBUTING.adoc) if you wish to submit pull requests, and in particular please sign the [Contributor's Agreement](https://cla.pivotal.io/sign/reactor) before your first change, however trivial._
 
+## Staging to Maven Central
+
+To stage a release to Maven Central, you need to create a release tag (release version) that contains the desired state and version numbers (`mvn versions:set versions:commit -q -o -DgenerateBackupPoms=false -DnewVersion=x.y.z.(RELEASE|Mnnn|RCnnn`) and force-push it to the `release-0.x` branch. This push will trigger a Maven staging build (see `build-and-deploy-to-maven-central.sh`).
+
 ## License
 This project is released under version 2.0 of the [Apache License][l].
 
