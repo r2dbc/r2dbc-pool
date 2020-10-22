@@ -56,6 +56,8 @@ Mono<Connection> connectionMono = Mono.from(connectionFactory.create());
 | `maxIdleTime`             | Maximum idle time of the connection in the pool.
 | `maxAcquireTime`          | Maximum time to acquire connection from pool.
 | `maxCreateConnectionTime` | Maximum time to create a new connection.
+| `poolName`                | Name of the Connection Pool.
+| `registerJmx`             | Whether to register the pool to JMX.
 | `validationDepth`         | Validation depth used to validate an R2DBC connection. Defaults to `LOCAL`.
 | `validationQuery`         | Query that will be executed just before a connection is given to you from the pool to validate that the connection to the database is still alive.
 

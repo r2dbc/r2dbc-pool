@@ -38,6 +38,7 @@ import static org.mockito.Mockito.when;
  *
  * @author Mark Paluch
  * @author Rodolpho S. Couto
+ * @author Todd Ginsberg
  */
 final class PoolingConnectionFactoryProviderUnitTests {
 
@@ -164,7 +165,7 @@ final class PoolingConnectionFactoryProviderUnitTests {
     void shouldApplyRegisterJmx() {
 
         ConnectionFactoryOptions options =
-            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?registerJmx=true&name=requiredHere");
+            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?registerJmx=true&poolName=requiredHere");
 
         ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
 
@@ -176,7 +177,7 @@ final class PoolingConnectionFactoryProviderUnitTests {
     void shouldApplyName() {
 
         ConnectionFactoryOptions options =
-            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?name=UnitTest");
+            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?poolName=UnitTest");
 
         ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
 
