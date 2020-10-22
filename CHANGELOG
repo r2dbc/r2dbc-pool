@@ -1,6 +1,14 @@
 R2DBC Pool Changelog
 =============================
 
+0.8.5.RELEASE
+------------------
+* Upgrade dependencies #98
+* Upgrade to R2DBC SPI 0.8.3.RELEASE #95
+* Use GitHub actions to deploy to OSS Sonatype/Maven Central #94
+* Remove boilerplate code #91
+* Remove an extra { from line 19 #90
+
 0.8.4.RELEASE
 ------------------
 * Upgrade to Mockito 3.5.10 #87
