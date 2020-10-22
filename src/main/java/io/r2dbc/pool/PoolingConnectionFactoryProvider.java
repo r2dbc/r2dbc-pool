@@ -34,6 +34,7 @@ import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
  * @author Mark Paluch
  * @author Rodolfo Beletatti
  * @author Rodolpho S. Couto
+ * @author Todd Ginsberg
  */
 public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvider {
 
@@ -86,6 +87,20 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public static final Option<Duration> MAX_CREATE_CONNECTION_TIME = Option.valueOf("maxCreateConnectionTime");
 
     /**
+     * Name of the Connection Pool {@link Option}
+     *
+     * @since 0.8.5
+     */
+    public static final Option<String> POOL_NAME = Option.valueOf("poolName");
+
+    /**
+     * {@link Option} to configure whether to register to JMX.
+     *
+     * @since 0.8.5
+     */
+    public static final Option<Boolean> REGISTER_JMX = Option.valueOf("registerJmx");
+
+    /**
      * ValidationQuery {@link Option}.
      */
     public static final Option<String> VALIDATION_QUERY = Option.valueOf("validationQuery");
@@ -95,19 +110,6 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
      */
     public static final Option<ValidationDepth> VALIDATION_DEPTH = Option.valueOf("validationDepth");
 
-    /**
-     * RegisterJMX {@link Option}
-     *
-     * @since 0.9
-     */
-    public static final Option<Boolean> REGISTER_JMX = Option.valueOf("registerJmx");
-
-    /**
-     * Name {@link Option}
-     *
-     * @since 0.9
-     */
-    public static final Option<String> NAME = Option.valueOf("name");
 
     private static final String COLON = ":";
 
@@ -161,10 +163,10 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         mapper.from(MAX_ACQUIRE_TIME).as(OptionMapper::toDuration).to(builder::maxAcquireTime);
         mapper.from(MAX_IDLE_TIME).as(OptionMapper::toDuration).to(builder::maxIdleTime);
         mapper.from(MAX_CREATE_CONNECTION_TIME).as(OptionMapper::toDuration).to(builder::maxCreateConnectionTime);
+        mapper.from(POOL_NAME).to(builder::name);
+        mapper.from(REGISTER_JMX).as(registerJmx -> registerJmx.equals("true")).to(builder::registerJmx);
         mapper.from(VALIDATION_QUERY).to(builder::validationQuery);
         mapper.from(VALIDATION_DEPTH).as(validationDepth -> OptionMapper.toEnum(validationDepth, ValidationDepth.class)).to(builder::validationDepth);
-        mapper.from(REGISTER_JMX).as(registerJmx -> registerJmx.equals("true")).to(builder::registerJmx);
-        mapper.from(NAME).to(builder::name);
 
         return builder.build();
     }
