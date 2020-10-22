@@ -35,13 +35,13 @@
         <assertj.version>3.17.2</assertj.version>
         <java.version>1.8</java.version>
         <jsr305.version>3.0.2</jsr305.version>
-        <junit.version>5.6.1</junit.version>
+        <junit.version>5.7.0</junit.version>
         <logback.version>1.2.3</logback.version>
-        <mockito.version>3.5.10</mockito.version>
+        <mockito.version>3.5.15</mockito.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <r2dbc-spi.version>0.8.1.RELEASE</r2dbc-spi.version>
-        <reactor.version>Dysprosium-SR11</reactor.version>
+        <reactor.version>Dysprosium-SR12</reactor.version>
     </properties>
 
     <licenses>
@@ -261,7 +261,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>flatten-maven-plugin</artifactId>
-                <version>1.2.1</version>
+                <version>1.2.5</version>
                 <executions>
                     <execution>
                         <id>flatten</id>
