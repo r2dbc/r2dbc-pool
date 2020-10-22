@@ -159,4 +159,28 @@ final class PoolingConnectionFactoryProviderUnitTests {
         assertThat(configuration)
             .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ofMinutes(30));
     }
+
+    @Test
+    void shouldApplyRegisterJmx() {
+
+        ConnectionFactoryOptions options =
+            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?registerJmx=true&name=requiredHere");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("registerJmx", true);
+    }
+
+    @Test
+    void shouldApplyName() {
+
+        ConnectionFactoryOptions options =
+            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?name=UnitTest");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("name", "UnitTest");
+    }
 }
