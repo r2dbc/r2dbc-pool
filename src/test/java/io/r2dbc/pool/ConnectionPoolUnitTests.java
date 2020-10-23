@@ -733,7 +733,7 @@ final class ConnectionPoolUnitTests {
             .expectNext(10)
             .verifyComplete();
 
-        pool.close();
+        pool.close().as(StepVerifier::create).verifyComplete();
 
         addDestroyHandler(pool, () -> {
             throw new IllegalStateException();
