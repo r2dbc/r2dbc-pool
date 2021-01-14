@@ -16,6 +16,7 @@
 
 package io.r2dbc.pool;
 
+import io.r2dbc.spi.Closeable;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
@@ -37,7 +38,6 @@ import javax.management.JMException;
 import javax.management.MBeanServer;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
-import java.io.Closeable;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -223,8 +223,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
     }
 
     @Override
-    public void close() {
-        dispose();
+    public Mono<Void> close() {
+        return disposeLater();
     }
 
     @Override
