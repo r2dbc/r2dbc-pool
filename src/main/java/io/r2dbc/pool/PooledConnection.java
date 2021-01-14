@@ -21,6 +21,7 @@ import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionMetadata;
 import io.r2dbc.spi.IsolationLevel;
 import io.r2dbc.spi.Statement;
+import io.r2dbc.spi.TransactionDefinition;
 import io.r2dbc.spi.ValidationDepth;
 import io.r2dbc.spi.Wrapped;
 import org.reactivestreams.Publisher;
@@ -69,7 +70,13 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     @Override
     public Mono<Void> beginTransaction() {
         assertNotClosed();
-        return Mono.from(this.connection.beginTransaction()).doOnSubscribe(ignore -> this.inTransaction = true);
+        return Mono.from(this.connection.beginTransaction()).doOnSubscribe(ignore -> this.inTransaction = true).doOnError(e -> this.inTransaction = false);
+    }
+
+    @Override
+    public Mono<Void> beginTransaction(TransactionDefinition definition) {
+        assertNotClosed();
+        return Mono.from(this.connection.beginTransaction(definition)).doOnSubscribe(ignore -> this.inTransaction = true).doOnError(e -> this.inTransaction = false);
     }
 
     @Override

@@ -17,6 +17,7 @@
 package io.r2dbc.pool;
 
 import io.r2dbc.spi.Connection;
+import io.r2dbc.spi.TransactionDefinition;
 import io.r2dbc.spi.ValidationDepth;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
@@ -52,6 +54,7 @@ class PooledConnectionUnitTests {
         when(pooledRefMock.poolable()).thenReturn(connectionMock);
         when(pooledRefMock.release()).thenReturn(Mono.empty());
         when(connectionMock.beginTransaction()).thenReturn(Mono.empty());
+        when(connectionMock.beginTransaction(any())).thenReturn(Mono.empty());
         when(connectionMock.close()).thenReturn(Mono.empty());
         when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.empty());
     }
@@ -64,6 +67,21 @@ class PooledConnectionUnitTests {
 
         PooledConnection connection = new PooledConnection(pooledRefMock);
         connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        verify(connectionMock).rollbackTransaction();
+        assertThat(wasCalled).isTrue();
+    }
+
+    @Test
+    void shouldRollbackUnfinishedExtendedTransaction() {
+
+        AtomicBoolean wasCalled = new AtomicBoolean();
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.<Void>empty().doOnSuccess(o -> wasCalled.set(true)));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock);
+        connection.beginTransaction(mock(TransactionDefinition.class)).as(StepVerifier::create).verifyComplete();
 
         connection.close().as(StepVerifier::create).verifyComplete();
 
