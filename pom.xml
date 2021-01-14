@@ -41,7 +41,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <r2dbc-spi.version>0.9.0.BUILD-SNAPSHOT</r2dbc-spi.version>
-        <reactor.version>Dysprosium-SR12</reactor.version>
+        <reactor.version>2020.0.3</reactor.version>
     </properties>
 
     <licenses>
