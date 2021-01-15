@@ -221,18 +221,18 @@ final class ConnectionPoolUnitTests {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.defer(() ->
-            Mono.delay(Duration.ofDays(1)).thenReturn(connectionMock))
+            Mono.delay(Duration.ofSeconds(15)).thenReturn(connectionMock))
         );
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
-            .maxCreateConnectionTime(Duration.ofMinutes(10))
+            .maxCreateConnectionTime(Duration.ofSeconds(1))
             .build();
 
         ConnectionPool pool = new ConnectionPool(configuration);
 
         StepVerifier.withVirtualTime(pool::create)
             .expectSubscription()
-            .thenAwait(Duration.ofMinutes(11))
+            .thenAwait(Duration.ofSeconds(11))
             .expectError(TimeoutException.class)
             .verify();
 
@@ -246,7 +246,7 @@ final class ConnectionPoolUnitTests {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.defer(() ->
-            Mono.delay(Duration.ofDays(1)).thenReturn(connectionMock))
+            Mono.delay(Duration.ofSeconds(15)).thenReturn(connectionMock))
         );
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
@@ -273,18 +273,18 @@ final class ConnectionPoolUnitTests {
 
         // acquire time should also consider the time to obtain an actual connection
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.defer(() ->
-            Mono.delay(Duration.ofDays(1)).thenReturn(connectionMock))
+            Mono.delay(Duration.ofSeconds(15)).thenReturn(connectionMock))
         );
         when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
             .acquireRetry(0)
-            .maxAcquireTime(Duration.ofMinutes(10))
+            .maxAcquireTime(Duration.ofSeconds(1))
             .build();
 
         StepVerifier.withVirtualTime(() -> new ConnectionPool(configuration).create())
             .expectSubscription()
-            .thenAwait(Duration.ofMinutes(11))
+            .thenAwait(Duration.ofSeconds(11))
             .expectError(R2dbcTimeoutException.class)
             .verify();
 
