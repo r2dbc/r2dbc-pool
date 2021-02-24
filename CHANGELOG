@@ -1,6 +1,85 @@
 R2DBC Pool Changelog
 =============================
 
+0.9.0.M1
+------------------
+* Upgrade to R2DBC SPI 0.9.0.M1 #109
+* Update copyright year to 2021 #106
+* Upgrade to Reactor 2020.0.3 #105
+* Add support for extended transaction definitions #104
+* Update link of r2dbc documentation #103
+* Enable Developer Certificate of Origin #101
+* Restrict CI and release task to r2dbc/r2dbc-pool repo #100
+* Upgrade dependencies #98
+* Implement "io.r2dbc.spi.Closeable" on ConnectionPool #97
+* Use GitHub actions to deploy to OSS Sonatype/Maven Central #94
+* Allow enabling JMX in PoolingConnectionFactoryProvider #93
+* Remove boilerplate code #91
+* Remove an extra { from line 19 #90
+* max idle time and max lifetime have confusing semantics #88
+* Upgrade to Mockito 3.5.10 #87
+* Upgrade to AssertJ 3.17.2 #86
+* Upgrade to Reactor Dysprosium SR11 #85
+* Allow enabling JMX via PoolingConnectionFactoryProvider #83
+* Add debug logging #82
+* Ensure no snapshots get referenced in release builds #78
+* Using Duration.ZERO for no timeout (or infinite timeout) is confusing #77
+* Rename master branch to main #74
+* Upgrade to Reactor Dysprosium SR9 #73
+* Upgrade dependencies #72
+* Added missing options to PoolingConnectionFactoryProvider #69
+* Pool doesn't reconnect when DB server is restarted #68
+* Upgrade build and test dependencies #67
+* Upgrade to Reactor Dysprosium-SR6 #65
+* Stage releases directly on maven central #63
+* mockito 3.2.4 #60
+* Allow builder creation without ConnectionFactory #59
+* Upgrade to JUnit 5.6.0 #58
+* Use different container when releasing to maven central #55
+* Enable Travis CI for pull requests #51
+* Migrate to Jenkins CI #50
+
+0.8.5.RELEASE
+------------------
+* Upgrade dependencies #98
+* Upgrade to R2DBC SPI 0.8.3.RELEASE #95
+* Use GitHub actions to deploy to OSS Sonatype/Maven Central #94
+* Remove boilerplate code #91
+* Remove an extra { from line 19 #90
+
+0.8.4.RELEASE
+------------------
+* Upgrade to Mockito 3.5.10 #87
+* Upgrade to AssertJ 3.17.2 #86
+* Upgrade to Reactor Dysprosium SR11 #85
+* Add debug logging #82
+* Ensure no snapshots get referenced in release builds #78
+* Rename master branch to main #74
+* Upgrade to Reactor Dysprosium SR9 #73
+
+0.8.3.RELEASE
+------------------
+* Upgrade dependencies #72
+* Added missing options to PoolingConnectionFactoryProvider #69
+* Pool doesn't reconnect when DB server is restarted #68
+
+0.8.2.RELEASE
+------------------
+* Upgrade build and test dependencies #67
+* Release 0.8.2.RELEASE #66
+* Upgrade to Reactor Dysprosium-SR6 #65
+* Stage releases directly on maven central #64
+* Allow builder creation without ConnectionFactory #59
+
+0.8.1.RELEASE
+------------------
+* Upgrade to JUnit 5.6.0 #58
+* Upgrade to Reactor Dyprosium-SR4 #57
+* Upgrade to SPI 0.8.1.RELEASE #56
+* Use different container when releasing to maven central #55
+* Backport Travis support #53
+* Backport Jenkins support to 0.8.x #52
+
 0.8.0.RELEASE
 ------------------
 * Upgrade to Reactor Dysprosium SR2 #49
