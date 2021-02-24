@@ -1,6 +1,11 @@
 R2DBC Pool Changelog
 =============================
 
+0.8.6.RELEASE
+-----------------------------------------
+* Upgrade to Reactor Dysprosium SR17 #111
+* Upgrade to R2DBC SPI 0.8.4.RELEASE #110
+
 0.8.5.RELEASE
 ------------------
 * Upgrade dependencies #98
