@@ -90,6 +90,9 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             });
         }
 
+        String acqName = String.format("Connection Acquisition from [%s]", configuration.getConnectionFactory());
+        String timeoutMessage = String.format("Connection Acquisition timed out after %dms", this.maxAcquireTime.toMillis());
+
         Function<Connection, Mono<Void>> allocateValidation = getValidationFunction(configuration);
 
         Mono<Connection> create = Mono.defer(() -> {
@@ -117,11 +120,10 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                     if (ref != null && emitted.compareAndSet(ref, null)) {
                         ref.release().subscribe();
                     }
-                }).name(String.format("Connection Acquisition from [%s]", configuration.getConnectionFactory()));
+                }).name(acqName);
 
             if (!this.maxAcquireTime.isZero()) {
-                mono = mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(String.format("Connection Acquisition timed" +
-                    " out after %dms", this.maxAcquireTime.toMillis()), e));
+                mono = mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e));
             }
             return mono;
         });
@@ -129,16 +131,14 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
     }
 
     private Function<Connection, Mono<Void>> getValidationFunction(ConnectionPoolConfiguration configuration) {
-        Function<Connection, Mono<Void>> allocateValidation;
+
+        String timeoutMessage = String.format("Validation timed out after %dms", this.maxAcquireTime.toMillis());
 
         if (!this.maxAcquireTime.isZero()) {
-            allocateValidation = getValidation(configuration).andThen(mono -> mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(String.format(
-                "Validation timed out after %dms", this.maxAcquireTime.toMillis()), e)));
-        } else {
-            allocateValidation = getValidation(configuration);
+            return getValidation(configuration).andThen(mono -> mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e)));
         }
 
-        return allocateValidation;
+        return getValidation(configuration);
     }
 
     private Function<Connection, Mono<Void>> getValidation(ConnectionPoolConfiguration configuration) {
@@ -369,6 +369,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         public int getMaxPendingAcquireSize() {
             return this.delegate.getMaxPendingAcquireSize();
         }
+
     }
 
     private class ConnectionPoolMXBeanImpl implements ConnectionPoolMXBean {
@@ -408,5 +409,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         public int getMaxPendingAcquireSize() {
             return this.poolMetrics.getMaxPendingAcquireSize();
         }
+
     }
+
 }
