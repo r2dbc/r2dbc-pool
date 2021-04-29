@@ -164,7 +164,7 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         mapper.from(MAX_IDLE_TIME).as(OptionMapper::toDuration).to(builder::maxIdleTime);
         mapper.from(MAX_CREATE_CONNECTION_TIME).as(OptionMapper::toDuration).to(builder::maxCreateConnectionTime);
         mapper.from(POOL_NAME).to(builder::name);
-        mapper.from(REGISTER_JMX).as(registerJmx -> registerJmx.equals("true")).to(builder::registerJmx);
+        mapper.from(REGISTER_JMX).as(OptionMapper::toBoolean).to(builder::registerJmx);
         mapper.from(VALIDATION_QUERY).to(builder::validationQuery);
         mapper.from(VALIDATION_DEPTH).as(validationDepth -> OptionMapper.toEnum(validationDepth, ValidationDepth.class)).to(builder::validationDepth);
 

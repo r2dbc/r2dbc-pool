@@ -103,6 +103,22 @@ final class OptionMapper {
     }
 
     /**
+     * Parse an {@link Option} to {@link boolean}.
+     */
+    static boolean toBoolean(Object value) {
+
+        if (value instanceof Boolean) {
+            return ((Boolean) value);
+        }
+
+        if (value instanceof String) {
+            return Boolean.parseBoolean(value.toString());
+        }
+
+        throw new IllegalArgumentException(String.format("Cannot convert value %s into Boolean", value));
+    }
+
+    /**
      * Parse an ISO-8601 formatted {@link Option} to {@link Duration}.
      */
     static Duration toDuration(Object value) {

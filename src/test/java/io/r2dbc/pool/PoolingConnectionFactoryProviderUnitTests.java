@@ -167,9 +167,10 @@ final class PoolingConnectionFactoryProviderUnitTests {
         ConnectionFactoryOptions options =
             ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?registerJmx=true&poolName=requiredHere");
 
-        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+        assertThat(PoolingConnectionFactoryProvider.buildConfiguration(options))
+            .hasFieldOrPropertyWithValue("registerJmx", true);
 
-        assertThat(configuration)
+        assertThat(PoolingConnectionFactoryProvider.buildConfiguration(options.mutate().option(PoolingConnectionFactoryProvider.REGISTER_JMX, true).build()))
             .hasFieldOrPropertyWithValue("registerJmx", true);
     }
 
