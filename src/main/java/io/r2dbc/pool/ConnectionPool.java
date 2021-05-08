@@ -212,6 +212,10 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             builder.sizeBetween(initialSize, maxSize);
         }
 
+        if (!configuration.getBackgroundEvictionInterval().isNegative()) {
+            builder.evictInBackground(configuration.getBackgroundEvictionInterval());
+        }
+
         customizer.accept(builder);
 
         return builder.buildPool();
