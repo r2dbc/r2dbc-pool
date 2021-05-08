@@ -52,10 +52,10 @@ Mono<Connection> connectionMono = Mono.from(connectionFactory.create());
 | `acquireRetry`            | Number of retries if the first connection acquiry attempt fails. Defaults to `1`.
 | `initialSize`             | Initial pool size. Defaults to `10`.
 | `maxSize`                 | Maximum pool size. Defaults to `10`.
-| `maxLifeTime`             | Maximum lifetime of the connection in the pool.
-| `maxIdleTime`             | Maximum idle time of the connection in the pool.
-| `maxAcquireTime`          | Maximum time to acquire connection from pool.
-| `maxCreateConnectionTime` | Maximum time to create a new connection.
+| `maxLifeTime`             | Maximum lifetime of the connection in the pool. Zero indicates no timeout. Defaults to no timeout.
+| `maxIdleTime` | Maximum idle time of the connection in the pool. Zero indicates no timeout. Defaults to `30` minites.<br />This value is used as an interval for background eviction of idle connections. If different value is desired for background eviction, you can pass it during setting of `maxIdleTime`
+| `maxAcquireTime`          | Maximum time to acquire connection from pool. Zero indicates no timeout. Defaults to no timeout.
+| `maxCreateConnectionTime` | Maximum time to create a new connection. Zero indicates no timeout. Defaults to no timeout.
 | `poolName`                | Name of the Connection Pool.
 | `registerJmx`             | Whether to register the pool to JMX.
 | `validationDepth`         | Validation depth used to validate an R2DBC connection. Defaults to `LOCAL`.

@@ -71,9 +71,11 @@ public final class ConnectionPoolConfiguration {
     @Nullable
     private final String validationQuery;
 
+    private final Duration backgroundEvictionInterval;
+
     private ConnectionPoolConfiguration(int acquireRetry, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
                                         int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
-                                        PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
+                                        PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery, @Nullable Duration backgroundEvictionInterval) {
         this.acquireRetry = acquireRetry;
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.clock = clock;
@@ -89,6 +91,7 @@ public final class ConnectionPoolConfiguration {
         this.registerJmx = registerJmx;
         this.validationDepth = validationDepth;
         this.validationQuery = validationQuery;
+        this.backgroundEvictionInterval = backgroundEvictionInterval;
     }
 
     /**
@@ -173,6 +176,10 @@ public final class ConnectionPoolConfiguration {
         return this.validationQuery;
     }
 
+    Duration getBackgroundEvictionInterval() {
+        return this.backgroundEvictionInterval;
+    }
+
     /**
      * A builder for {@link ConnectionPoolConfiguration} instances.
      * <p>
@@ -214,6 +221,8 @@ public final class ConnectionPoolConfiguration {
         private String validationQuery;
 
         private ValidationDepth validationDepth = ValidationDepth.LOCAL;
+
+        private Duration backgroundEvictionInterval = maxIdleTime;
 
         private Builder() {
         }
@@ -301,6 +310,19 @@ public final class ConnectionPoolConfiguration {
                 throw new IllegalArgumentException("maxIdleTime must not be negative");
             }
             this.maxIdleTime = maxIdleTime;
+            return this;
+        }
+
+        /**
+         * Configure an idle {@link Duration timeout} and a background eviction {@link Duration interval}, which both default to 30 minutes.
+         *
+         * @param maxIdleTime the maximum idle time. {@link Duration#ZERO} means immediate connection disposal. A negative or a {@code null} value results in not applying a timeout.
+         * @param backgroundEvictionInterval background eviction interval. {@link Duration#ZERO}, a negative or a {@code null} value results in disabling background eviction.
+         * @return this {@link Builder}
+         */
+        public Builder maxIdleTime(@Nullable Duration maxIdleTime, @Nullable Duration backgroundEvictionInterval) {
+            this.maxIdleTime = applyDefault(maxIdleTime);
+            this.backgroundEvictionInterval = applyDefault(backgroundEvictionInterval);
             return this;
         }
 
@@ -441,7 +463,7 @@ public final class ConnectionPoolConfiguration {
             validate();
             return new ConnectionPoolConfiguration(this.acquireRetry, this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize, this.maxIdleTime,
                 this.maxCreateConnectionTime,
-                this.maxAcquireTime, this.maxLifeTime, this.metricsRecorder, this.name, this.registerJmx, this.validationDepth, this.validationQuery
+                this.maxAcquireTime, this.maxLifeTime, this.metricsRecorder, this.name, this.registerJmx, this.validationDepth, this.validationQuery, this.backgroundEvictionInterval
             );
         }
 
@@ -492,6 +514,7 @@ public final class ConnectionPoolConfiguration {
                 ", registerJmx='" + this.registerJmx + '\'' +
                 ", validationDepth='" + this.validationDepth + '\'' +
                 ", validationQuery='" + this.validationQuery + '\'' +
+                ", backgroundEvictionInterval='" + this.backgroundEvictionInterval + '\'' +
                 '}';
         }
     }

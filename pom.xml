@@ -38,6 +38,7 @@
         <junit.version>5.7.0</junit.version>
         <logback.version>1.2.3</logback.version>
         <mockito.version>3.5.15</mockito.version>
+        <awaitility.version>4.0.3</awaitility.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <r2dbc-spi.version>0.8.4.RELEASE</r2dbc-spi.version>
@@ -146,6 +147,12 @@
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <version>${logback.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <version>${awaitility.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
