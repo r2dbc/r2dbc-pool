@@ -42,6 +42,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -50,6 +51,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static java.lang.String.format;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -492,6 +494,82 @@ final class ConnectionPoolUnitTests {
         // should not be evicted
         assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
         assertThat(connectionFactory.getCreateCount()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldConsiderBackgroundEvictionInterval() {
+
+        MockConnection firstConnection = MockConnection.builder().valid(true).build();
+        CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .initialSize(0)
+            .maxIdleTime(Duration.ofMillis(200), Duration.ofMillis(100))
+            .build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+        assertThat(connectionFactory.getCreateCount()).isEqualTo(1);
+        // should be evicted by background eviction.
+        await("connection closing").atMost(1, TimeUnit.SECONDS).until(firstConnection::isCloseCalled);
+    }
+
+    @Test
+    void shouldConsiderZeroBackgroundEvictionInterval() {
+        MockConnection firstConnection = MockConnection.builder().valid(true).build();
+        CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .initialSize(0)
+            .maxIdleTime(Duration.ofMillis(200), Duration.ZERO)
+            .build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+
+        // should not be evicted
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+        assertThat(connectionFactory.getCreateCount()).isEqualTo(1);
+        assertThat(firstConnection.isCloseCalled()).isFalse();
+    }
+
+    @Test
+    void shouldConsiderNullBackgroundEvictionInterval() {
+        MockConnection firstConnection = MockConnection.builder().valid(true).build();
+        CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .initialSize(0)
+            .maxIdleTime(Duration.ofMillis(200), null)
+            .build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+
+        // should not be evicted
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+        assertThat(connectionFactory.getCreateCount()).isEqualTo(1);
+        assertThat(firstConnection.isCloseCalled()).isFalse();
+    }
+
+    @Test
+    void shouldConsiderNegativeBackgroundEvictionInterval() {
+
+        MockConnection firstConnection = MockConnection.builder().valid(true).build();
+        CountingConnectionFactory connectionFactory = new CountingConnectionFactory(firstConnection);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+            .initialSize(0)
+            .maxIdleTime(Duration.ofMillis(200), Duration.ofMillis(-1))
+            .build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+
+        // should not be evicted
+        assertPoolCreatesConnectionSuccessfully(pool, firstConnection);
+        assertThat(connectionFactory.getCreateCount()).isEqualTo(1);
+        assertThat(firstConnection.isCloseCalled()).isFalse();
     }
 
     @Test
