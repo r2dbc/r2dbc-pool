@@ -49,8 +49,8 @@ Mono<Connection> connectionMono = Mono.from(connectionFactory.create());
 | ------                    | -----------
 | `driver`                  | Must be `pool`
 | `protocol`                | Driver identifier. The value is propagated by the pool to the `driver` property.
-| `acquireRetry`            | Number of retries if the first connection acquisition attempt fails. Defaults to `1`. Setting the value to `Duration.ZERO` disables background eviction even if `maxIdleTime` is configured.
-| `backgroundEvictionInterval` | Interval for background eviction enabling background eviction. Disabled by default.
+| `acquireRetry`            | Number of retries if the first connection acquisition attempt fails. Defaults to `1`.
+| `backgroundEvictionInterval` | Interval for background eviction enabling background eviction. Disabled by default. Setting the value to `Duration.ZERO` disables background eviction even if `maxIdleTime` is configured.
 | `initialSize`             | Initial pool size. Defaults to `10`.
 | `maxSize`                 | Maximum pool size. Defaults to `10`.
 | `maxLifeTime`             | Maximum lifetime of the connection in the pool. Negative values indicate no timeout. Defaults to no timeout.
