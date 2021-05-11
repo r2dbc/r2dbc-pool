@@ -36,10 +36,13 @@ import java.util.function.Consumer;
  * @author Tadaya Tsuyukubo
  * @author Steffen Kreutz
  * @author Rodolfo Beletatti
+ * @author Petromir Dzhunev
  */
 public final class ConnectionPoolConfiguration {
 
     private final int acquireRetry;
+
+    private final Duration backgroundEvictionInterval;
 
     private final ConnectionFactory connectionFactory;
 
@@ -71,11 +74,10 @@ public final class ConnectionPoolConfiguration {
     @Nullable
     private final String validationQuery;
 
-    private final Duration backgroundEvictionInterval;
-
-    private ConnectionPoolConfiguration(int acquireRetry, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer,
+    private ConnectionPoolConfiguration(int acquireRetry, @Nullable Duration backgroundEvictionInterval, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ?
+        extends PoolConfig<? extends Connection>>> customizer,
                                         int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
-                                        PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery, @Nullable Duration backgroundEvictionInterval) {
+                                        PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
         this.acquireRetry = acquireRetry;
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.clock = clock;
@@ -116,6 +118,10 @@ public final class ConnectionPoolConfiguration {
 
     int getAcquireRetry() {
         return this.acquireRetry;
+    }
+
+    Duration getBackgroundEvictionInterval() {
+        return this.backgroundEvictionInterval;
     }
 
     ConnectionFactory getConnectionFactory() {
@@ -176,10 +182,6 @@ public final class ConnectionPoolConfiguration {
         return this.validationQuery;
     }
 
-    Duration getBackgroundEvictionInterval() {
-        return this.backgroundEvictionInterval;
-    }
-
     /**
      * A builder for {@link ConnectionPoolConfiguration} instances.
      * <p>
@@ -190,6 +192,8 @@ public final class ConnectionPoolConfiguration {
         private static final int DEFAULT_SIZE = 10;
 
         private int acquireRetry = 1;
+
+        private Duration backgroundEvictionInterval = Duration.ofNanos(-1);  // ZERO indicates no-timeout, negative marks unconfigured.
 
         private ConnectionFactory connectionFactory;
 
@@ -222,8 +226,6 @@ public final class ConnectionPoolConfiguration {
 
         private ValidationDepth validationDepth = ValidationDepth.LOCAL;
 
-        private Duration backgroundEvictionInterval = maxIdleTime;
-
         private Builder() {
         }
 
@@ -240,6 +242,18 @@ public final class ConnectionPoolConfiguration {
                 throw new IllegalArgumentException("retryAttempts must not be negative");
             }
             this.acquireRetry = retryAttempts;
+            return this;
+        }
+
+        /**
+         * Configure the background eviction {@link Duration interval} to evict idle connections while the pool isn't actively used for allocations/releases.
+         *
+         * @param backgroundEvictionInterval background eviction interval. {@link Duration#ZERO} value results in disabling background eviction.
+         * @return this {@link Builder}
+         * @since 0.8.7
+         */
+        public Builder backgroundEvictionInterval(Duration backgroundEvictionInterval) {
+            this.backgroundEvictionInterval = Assert.requireNonNull(backgroundEvictionInterval, "backgroundEvictionInterval customizer must not be null");
             return this;
         }
 
@@ -298,7 +312,8 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
-         * Configure a idle {@link Duration timeout}. Defaults to 30 minutes.
+         * Configure a idle {@link Duration timeout}. Defaults to 30 minutes. Configuring {@code maxIdleTime} enables background eviction using the configured idle time as interval unless
+         * {@link #backgroundEvictionInterval(Duration)} is configured.
          *
          * @param maxIdleTime the maximum idle time, must not be {@code null} and must not be negative. {@link Duration#ZERO} means no idle timeout.
          * @return this {@link Builder}
@@ -310,19 +325,6 @@ public final class ConnectionPoolConfiguration {
                 throw new IllegalArgumentException("maxIdleTime must not be negative");
             }
             this.maxIdleTime = maxIdleTime;
-            return this;
-        }
-
-        /**
-         * Configure an idle {@link Duration timeout} and a background eviction {@link Duration interval}, which both default to 30 minutes.
-         *
-         * @param maxIdleTime the maximum idle time. {@link Duration#ZERO} means immediate connection disposal. A negative or a {@code null} value results in not applying a timeout.
-         * @param backgroundEvictionInterval background eviction interval. {@link Duration#ZERO}, a negative or a {@code null} value results in disabling background eviction.
-         * @return this {@link Builder}
-         */
-        public Builder maxIdleTime(@Nullable Duration maxIdleTime, @Nullable Duration backgroundEvictionInterval) {
-            this.maxIdleTime = applyDefault(maxIdleTime);
-            this.backgroundEvictionInterval = applyDefault(backgroundEvictionInterval);
             return this;
         }
 
@@ -461,9 +463,10 @@ public final class ConnectionPoolConfiguration {
         public ConnectionPoolConfiguration build() {
             applyDefaults();
             validate();
-            return new ConnectionPoolConfiguration(this.acquireRetry, this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize, this.maxIdleTime,
+            return new ConnectionPoolConfiguration(this.acquireRetry, this.backgroundEvictionInterval, this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize,
+                this.maxIdleTime,
                 this.maxCreateConnectionTime,
-                this.maxAcquireTime, this.maxLifeTime, this.metricsRecorder, this.name, this.registerJmx, this.validationDepth, this.validationQuery, this.backgroundEvictionInterval
+                this.maxAcquireTime, this.maxLifeTime, this.metricsRecorder, this.name, this.registerJmx, this.validationDepth, this.validationQuery
             );
         }
 
@@ -501,6 +504,7 @@ public final class ConnectionPoolConfiguration {
         public String toString() {
             return "Builder{" +
                 "acquireRetry='" + this.acquireRetry + '\'' +
+                ", backgroundEvictionInterval='" + this.backgroundEvictionInterval + '\'' +
                 ", connectionFactory='" + this.connectionFactory + '\'' +
                 ", clock='" + this.clock + '\'' +
                 ", initialSize='" + this.initialSize + '\'' +
@@ -514,7 +518,6 @@ public final class ConnectionPoolConfiguration {
                 ", registerJmx='" + this.registerJmx + '\'' +
                 ", validationDepth='" + this.validationDepth + '\'' +
                 ", validationQuery='" + this.validationQuery + '\'' +
-                ", backgroundEvictionInterval='" + this.backgroundEvictionInterval + '\'' +
                 '}';
         }
     }

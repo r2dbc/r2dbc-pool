@@ -150,6 +150,17 @@ final class PoolingConnectionFactoryProviderUnitTests {
     }
 
     @Test
+    void shouldApplyBackgroundEvictionInterval() {
+
+        ConnectionFactoryOptions options = ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?backgroundEvictionInterval=PT30M");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("backgroundEvictionInterval", Duration.ofMinutes(30));
+    }
+
+    @Test
     void shouldApplyMaxCreateConnectionTime() {
 
         ConnectionFactoryOptions options =

@@ -55,6 +55,7 @@ import java.util.function.Function;
  *
  * @author Mark Paluch
  * @author Tadaya Tsuyukubo
+ * @author Petromir Dzhunev
  */
 public class ConnectionPool implements ConnectionFactory, Disposable, Closeable, Wrapped<ConnectionFactory> {
 
@@ -207,8 +208,14 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             builder.sizeBetween(initialSize, maxSize);
         }
 
-        if (!configuration.getBackgroundEvictionInterval().isNegative()) {
-            builder.evictInBackground(configuration.getBackgroundEvictionInterval());
+        Duration backgroundEvictionInterval = configuration.getBackgroundEvictionInterval();
+
+        if (!backgroundEvictionInterval.isZero()) {
+            if (!backgroundEvictionInterval.isNegative()) {
+                builder.evictInBackground(backgroundEvictionInterval);
+            } else if (!configuration.getMaxIdleTime().isNegative()) {
+                builder.evictInBackground(configuration.getMaxIdleTime());
+            }
         }
 
         customizer.accept(builder);
