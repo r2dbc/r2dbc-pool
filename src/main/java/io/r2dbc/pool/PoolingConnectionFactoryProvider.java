@@ -49,6 +49,13 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public static final Option<Integer> ACQUIRE_RETRY = Option.valueOf("acquireRetry");
 
     /**
+     * Background eviction interval {@link Option}.
+     *
+     * @since 0.8.7
+     */
+    public static final Option<Integer> BACKGROUND_EVICTION_INTERVAL = Option.valueOf("backgroundEvictionInterval");
+
+    /**
      * InitialSize {@link Option}.
      */
     public static final Option<Integer> INITIAL_SIZE = Option.valueOf("initialSize");
@@ -61,42 +68,42 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     /**
      * MaxLifeTime {@link Option}.
      *
-     * @since 0.9
+     * @since 0.8.3
      */
     public static final Option<Duration> MAX_LIFE_TIME = Option.valueOf("maxLifeTime");
 
     /**
      * MaxAcquireTime {@link Option}.
      *
-     * @since 0.9
+     * @since 0.8.3
      */
     public static final Option<Duration> MAX_ACQUIRE_TIME = Option.valueOf("maxAcquireTime");
 
     /**
      * MaxIdleTime {@link Option}.
      *
-     * @since 0.9
+     * @since 0.8.3
      */
     public static final Option<Duration> MAX_IDLE_TIME = Option.valueOf("maxIdleTime");
 
     /**
      * MaxCreateConnectionTime {@link Option}.
      *
-     * @since 0.9
+     * @since 0.8.3
      */
     public static final Option<Duration> MAX_CREATE_CONNECTION_TIME = Option.valueOf("maxCreateConnectionTime");
 
     /**
      * Name of the Connection Pool {@link Option}
      *
-     * @since 0.9
+     * @since 0.8.5
      */
     public static final Option<String> POOL_NAME = Option.valueOf("poolName");
 
     /**
      * {@link Option} to configure whether to register to JMX.
      *
-     * @since 0.9
+     * @since 0.8.5
      */
     public static final Option<Boolean> REGISTER_JMX = Option.valueOf("registerJmx");
 
@@ -156,6 +163,7 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         Builder builder = ConnectionPoolConfiguration.builder(connectionFactory);
         OptionMapper mapper = OptionMapper.create(newOptions);
 
+        mapper.from(BACKGROUND_EVICTION_INTERVAL).as(OptionMapper::toDuration).to(builder::backgroundEvictionInterval);
         mapper.from(INITIAL_SIZE).as(OptionMapper::toInteger).to(builder::initialSize);
         mapper.from(MAX_SIZE).as(OptionMapper::toInteger).to(builder::maxSize);
         mapper.from(ACQUIRE_RETRY).as(OptionMapper::toInteger).to(builder::acquireRetry);

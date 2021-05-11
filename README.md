@@ -49,11 +49,12 @@ Mono<Connection> connectionMono = Mono.from(connectionFactory.create());
 | ------                    | -----------
 | `driver`                  | Must be `pool`
 | `protocol`                | Driver identifier. The value is propagated by the pool to the `driver` property.
-| `acquireRetry`            | Number of retries if the first connection acquiry attempt fails. Defaults to `1`.
+| `acquireRetry`            | Number of retries if the first connection acquisition attempt fails. Defaults to `1`. Setting the value to `Duration.ZERO` disables background eviction even if `maxIdleTime` is configured.
+| `backgroundEvictionInterval` | Interval for background eviction enabling background eviction. Disabled by default.
 | `initialSize`             | Initial pool size. Defaults to `10`.
 | `maxSize`                 | Maximum pool size. Defaults to `10`.
 | `maxLifeTime`             | Maximum lifetime of the connection in the pool. Negative values indicate no timeout. Defaults to no timeout.
-| `maxIdleTime` | Maximum idle time of the connection in the pool. Negative values indicate no timeout. Defaults to `30` minites.<br />This value is used as an interval for background eviction of idle connections. If different value is desired for background eviction, you can pass it during setting of `maxIdleTime`
+| `maxIdleTime`             | Maximum idle time of the connection in the pool. Negative values indicate no timeout. Defaults to `30` minutes.<br />This value is used as an interval for background eviction of idle connections unless configuring `backgroundEvictionInterval`.
 | `maxAcquireTime`          | Maximum time to acquire connection from pool. Negative values indicate no timeout. Defaults to no timeout.
 | `maxCreateConnectionTime` | Maximum time to create a new connection. Negative values indicate no timeout. Defaults to no timeout.
 | `poolName`                | Name of the Connection Pool.
