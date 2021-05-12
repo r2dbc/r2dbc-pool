@@ -1,6 +1,15 @@
 R2DBC Pool Changelog
 =============================
 
+0.8.7.RELEASE
+-----------------------------------------
+* Upgrade to Reactor Dysprosium SR20 #125
+* Upgrade to SPI 0.8.5.RELEASE #124
+* Update documentation with correct pool construction #121
+* Create new connection generates a lot of garbage #116
+* Add support for background eviction of idle objects #115
+* JMX config is not proper read from PoolingConnectionFactoryProvider options #113
+
 0.8.6.RELEASE
 -----------------------------------------
 * Upgrade to Reactor Dysprosium SR17 #111
