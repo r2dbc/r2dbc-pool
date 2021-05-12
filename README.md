@@ -15,32 +15,34 @@ Configuration of the `ConnectionPool` can be accomplished in several ways:
 **URL Connection Factory Discovery**
 
 ```java
-ConnectionFactory connectionFactory = ConnectionFactories.get("r2dbc:pool:<my-driver>://<host>:<port>/<database>[?maxIdleTime=PT60S[&…]");
+// Creates a ConnectionPool wrapping an underlying ConnectionFactory 
+ConnectionFactory pooledConnectionFactory=ConnectionFactories.get("r2dbc:pool:<my-driver>://<host>:<port>/<database>[?maxIdleTime=PT60S[&…]");
 
-Publisher<? extends Connection> connectionPublisher = connectionFactory.create();
+        Publisher<?extends Connection> connectionPublisher=pooledConnectionFactory.create();
 ```
 
 **Programmatic Connection Factory Discovery**
 
 ```java
-ConnectionFactory connectionFactory = ConnectionFactories.get(ConnectionFactoryOptions.builder()
-   .option(DRIVER, "pool")
-   .option(PROTOCOL, "postgresql") // driver identifier, PROTOCOL is delegated as DRIVER by the pool.
-   .option(HOST, "…")
-   .option(PORT, "…") 
-   .option(USER, "…")
-   .option(PASSWORD, "…")
-   .option(DATABASE, "…")
-   .build());
+// Creates a ConnectionPool wrapping an underlying ConnectionFactory
+ConnectionFactory pooledConnectionFactory=ConnectionFactories.get(ConnectionFactoryOptions.builder()
+        .option(DRIVER,"pool")
+        .option(PROTOCOL,"postgresql") // driver identifier, PROTOCOL is delegated as DRIVER by the pool.
+        .option(HOST,"…")
+        .option(PORT,"…")
+        .option(USER,"…")
+        .option(PASSWORD,"…")
+        .option(DATABASE,"…")
+        .build());
 ```
 
 The delegated `DRIVER` (via `PROTOCOL`) above refers to the r2dbc-driver, such as `h2`, `postgresql`, `mssql`, `mysql`, `spanner`.
 
 ```java
-Publisher<? extends Connection> connectionPublisher = connectionFactory.create();
+Publisher<?extends Connection> pooledConnectionFactory=connectionFactory.create();
 
 // Alternative: Creating a Mono using Project Reactor
-Mono<Connection> connectionMono = Mono.from(connectionFactory.create());
+        Mono<Connection> connectionMono=Mono.from(pooledConnectionFactory.create());
 ```
 
 **Supported ConnectionFactory Discovery Options**
@@ -67,17 +69,25 @@ All other properties are driver-specific.
 **Programmatic Configuration**
 
 ```java
-ConnectionFactory connectionFactory = …;
+// Creates a ConnectionFactory for the specified DRIVER
+ConnectionFactory connectionFactory=ConnectionFactories.get(ConnectionFactoryOptions.builder()
+        .option(DRIVER,"postgresql")
+        .option(HOST,"…")
+        .option(PORT,"…")
+        .option(USER,"…")
+        .option(PASSWORD,"…")
+        .option(DATABASE,"…")
+        .build());
 
-ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
-   .maxIdleTime(Duration.ofMillis(1000))
-   .maxSize(20)
-   .build();
+// Create a ConnectionPool for connectionFactory
+        ConnectionPoolConfiguration configuration=ConnectionPoolConfiguration.builder(connectionFactory)
+        .maxIdleTime(Duration.ofMillis(1000))
+        .maxSize(20)
+        .build();
 
-ConnectionPool pool = new ConnectionPool(configuration);
- 
+        ConnectionPool pool=new ConnectionPool(configuration);
 
-Mono<Connection> connectionMono = pool.create();
+        Mono<Connection> connectionMono = pool.create();
 
 // later
 
