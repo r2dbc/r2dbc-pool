@@ -32,13 +32,13 @@
     <url>https://github.com/r2dbc/r2dbc-pool</url>
 
     <properties>
-        <assertj.version>3.17.2</assertj.version>
-        <awaitility.version>4.0.3</awaitility.version>
+        <assertj.version>3.19.0</assertj.version>
+        <awaitility.version>4.1.0</awaitility.version>
         <java.version>1.8</java.version>
         <jsr305.version>3.0.2</jsr305.version>
-        <junit.version>5.7.0</junit.version>
+        <junit.version>5.7.1</junit.version>
         <logback.version>1.2.3</logback.version>
-        <mockito.version>3.5.15</mockito.version>
+        <mockito.version>3.9.0</mockito.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <r2dbc-spi.version>0.8.5.RELEASE</r2dbc-spi.version>
