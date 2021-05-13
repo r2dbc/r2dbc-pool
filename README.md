@@ -18,7 +18,7 @@ Configuration of the `ConnectionPool` can be accomplished in several ways:
 // Creates a ConnectionPool wrapping an underlying ConnectionFactory 
 ConnectionFactory pooledConnectionFactory=ConnectionFactories.get("r2dbc:pool:<my-driver>://<host>:<port>/<database>[?maxIdleTime=PT60S[&…]");
 
-        Publisher<?extends Connection> connectionPublisher=pooledConnectionFactory.create();
+Publisher<?extends Connection> connectionPublisher=pooledConnectionFactory.create();
 ```
 
 **Programmatic Connection Factory Discovery**
@@ -42,7 +42,7 @@ The delegated `DRIVER` (via `PROTOCOL`) above refers to the r2dbc-driver, such a
 Publisher<?extends Connection> pooledConnectionFactory=connectionFactory.create();
 
 // Alternative: Creating a Mono using Project Reactor
-        Mono<Connection> connectionMono=Mono.from(pooledConnectionFactory.create());
+Mono<Connection> connectionMono=Mono.from(pooledConnectionFactory.create());
 ```
 
 **Supported ConnectionFactory Discovery Options**
@@ -80,14 +80,14 @@ ConnectionFactory connectionFactory=ConnectionFactories.get(ConnectionFactoryOpt
         .build());
 
 // Create a ConnectionPool for connectionFactory
-        ConnectionPoolConfiguration configuration=ConnectionPoolConfiguration.builder(connectionFactory)
+ConnectionPoolConfiguration configuration=ConnectionPoolConfiguration.builder(connectionFactory)
         .maxIdleTime(Duration.ofMillis(1000))
         .maxSize(20)
         .build();
 
-        ConnectionPool pool=new ConnectionPool(configuration);
+ConnectionPool pool=new ConnectionPool(configuration);
 
-        Mono<Connection> connectionMono = pool.create();
+Mono<Connection> connectionMono = pool.create();
 
 // later
 
