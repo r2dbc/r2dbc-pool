@@ -138,7 +138,7 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
 
     static ConnectionPoolConfiguration buildConfiguration(ConnectionFactoryOptions connectionFactoryOptions) {
 
-        String protocol = connectionFactoryOptions.getRequiredValue(ConnectionFactoryOptions.PROTOCOL);
+        String protocol = connectionFactoryOptions.getRequiredValue(ConnectionFactoryOptions.PROTOCOL).toString();
         if (protocol.trim().length() == 0) {
             throw new IllegalArgumentException(String.format("Protocol %s is not valid.", protocol));
         }
@@ -171,9 +171,9 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         mapper.from(MAX_ACQUIRE_TIME).as(OptionMapper::toDuration).to(builder::maxAcquireTime);
         mapper.from(MAX_IDLE_TIME).as(OptionMapper::toDuration).to(builder::maxIdleTime);
         mapper.from(MAX_CREATE_CONNECTION_TIME).as(OptionMapper::toDuration).to(builder::maxCreateConnectionTime);
-        mapper.from(POOL_NAME).to(builder::name);
+        mapper.fromExact(POOL_NAME).to(builder::name);
         mapper.from(REGISTER_JMX).as(OptionMapper::toBoolean).to(builder::registerJmx);
-        mapper.from(VALIDATION_QUERY).to(builder::validationQuery);
+        mapper.fromExact(VALIDATION_QUERY).to(builder::validationQuery);
         mapper.from(VALIDATION_DEPTH).as(validationDepth -> OptionMapper.toEnum(validationDepth, ValidationDepth.class)).to(builder::validationDepth);
 
         return builder.build();
@@ -183,12 +183,9 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public boolean supports(ConnectionFactoryOptions connectionFactoryOptions) {
         Assert.requireNonNull(connectionFactoryOptions, "connectionFactoryOptions must not be null");
 
-        String driver = connectionFactoryOptions.getValue(DRIVER);
-        if (driver == null || !driver.equals(POOLING_DRIVER)) {
-            return false;
-        }
+        Object driver = connectionFactoryOptions.getValue(DRIVER);
 
-        return true;
+        return driver != null && driver.equals(POOLING_DRIVER);
     }
 
     @Override

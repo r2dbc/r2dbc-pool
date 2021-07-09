@@ -57,13 +57,28 @@ final class OptionMapper {
      * @param <T>
      * @return the source object.
      */
-    public <T> Source<T> from(Option<T> option) {
+    public <T> Source<Object> from(Option<?> option) {
 
         if (this.options.hasOption(option)) {
+            return new AvailableSource<>(() -> this.options.getRequiredValue(option), option.name());
+        }
 
-            return new AvailableSource<T>(() -> {
-                return this.options.getRequiredValue(option);
-            }, option.name());
+        return NullSource.instance();
+    }
+
+    /**
+     * Construct a new {@link Source} for a {@link Option} assuming the option value uses the exact option type. Options without a value are not bound or mapped in the later stages of {@link Source}.
+     *
+     * @param option
+     * @param <T>
+     * @return the source object.
+     * @since 0.9
+     */
+    @SuppressWarnings("unchecked")
+    public <T> Source<T> fromExact(Option<T> option) {
+
+        if (this.options.hasOption(option)) {
+            return new AvailableSource<>(() -> (T) this.options.getRequiredValue(option), option.name());
         }
 
         return NullSource.instance();

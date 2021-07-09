@@ -30,6 +30,8 @@ import reactor.pool.PooledRef;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 
+import java.time.Duration;
+
 /**
  * Pooled {@link Connection} implementation. Performs a cleanup on {@link #close()} if used transactionally.
  * <p>
@@ -147,6 +149,18 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     public Mono<Void> setAutoCommit(boolean autoCommit) {
         assertNotClosed();
         return Mono.from(this.connection.setAutoCommit(autoCommit));
+    }
+
+    @Override
+    public Mono<Void> setLockWaitTimeout(Duration timeout) {
+        assertNotClosed();
+        return Mono.from(this.connection.setLockWaitTimeout(timeout));
+    }
+
+    @Override
+    public Mono<Void> setStatementTimeout(Duration timeout) {
+        assertNotClosed();
+        return Mono.from(this.connection.setStatementTimeout(timeout));
     }
 
     @Override

@@ -25,6 +25,7 @@ import reactor.core.publisher.Mono;
 import reactor.pool.PooledRef;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -147,4 +148,41 @@ class PooledConnectionUnitTests {
 
         assertThat(released).isTrue();
     }
+
+    @Test
+    void shouldCallSetAutoCommit() {
+
+        AtomicBoolean wasCalled = new AtomicBoolean();
+        when(connectionMock.setAutoCommit(true)).thenReturn(Mono.<Void>empty().doOnSuccess(o -> wasCalled.set(true)));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock);
+        connection.setAutoCommit(true).as(StepVerifier::create).verifyComplete();
+
+        assertThat(wasCalled).isTrue();
+    }
+
+    @Test
+    void shouldCallSetLockWaitTimeout() {
+
+        AtomicBoolean wasCalled = new AtomicBoolean();
+        when(connectionMock.setLockWaitTimeout(Duration.ofSeconds(10))).thenReturn(Mono.<Void>empty().doOnSuccess(o -> wasCalled.set(true)));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock);
+        connection.setLockWaitTimeout(Duration.ofSeconds(10)).as(StepVerifier::create).verifyComplete();
+
+        assertThat(wasCalled).isTrue();
+    }
+
+    @Test
+    void shouldCallSetStatementTimeout() {
+
+        AtomicBoolean wasCalled = new AtomicBoolean();
+        when(connectionMock.setStatementTimeout(Duration.ofSeconds(10))).thenReturn(Mono.<Void>empty().doOnSuccess(o -> wasCalled.set(true)));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock);
+        connection.setStatementTimeout(Duration.ofSeconds(10)).as(StepVerifier::create).verifyComplete();
+
+        assertThat(wasCalled).isTrue();
+    }
+
 }
