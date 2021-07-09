@@ -108,8 +108,8 @@ Additionally, the pool accepts custom `postAllocate` and `preRelease` functions 
 
 ```java
 ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
-    .preRelease(connection -> Flux.from(connection.createStatement("SET schema = …").execute()).flatMap(Result::getRowsUpdated).then())
-    .postAllocate(Connection::rollbackTransaction)
+    .postAllocate(connection -> Flux.from(connection.createStatement("SET schema = …").execute()).flatMap(Result::getRowsUpdated).then())
+    .preRelease(Connection::rollbackTransaction)
     .build();
 
 ConnectionPool pool = new ConnectionPool(configuration);
