@@ -17,6 +17,7 @@
 package io.r2dbc.pool;
 
 import io.r2dbc.spi.Connection;
+import io.r2dbc.spi.Lifecycle;
 import io.r2dbc.spi.TransactionDefinition;
 import io.r2dbc.spi.ValidationDepth;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,8 @@ import reactor.pool.PooledRef;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -51,7 +54,10 @@ class PooledConnectionUnitTests {
 
     @BeforeEach
     void setUp() {
+        setup(connectionMock);
+    }
 
+    private void setup(Connection connectionMock) {
         when(pooledRefMock.poolable()).thenReturn(connectionMock);
         when(pooledRefMock.release()).thenReturn(Mono.empty());
         when(connectionMock.beginTransaction()).thenReturn(Mono.empty());
@@ -183,6 +189,62 @@ class PooledConnectionUnitTests {
         connection.setStatementTimeout(Duration.ofSeconds(10)).as(StepVerifier::create).verifyComplete();
 
         assertThat(wasCalled).isTrue();
+    }
+
+    @Test
+    void shouldInvokeLifecyclePreRelease() {
+
+        AtomicBoolean wasCalled = new AtomicBoolean();
+
+        ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
+        reset(pooledRefMock);
+        setup(connectionMock);
+
+        when(connectionMock.preRelease()).thenReturn(Mono.fromRunnable(() -> wasCalled.set(true)));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock);
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        assertThat(wasCalled).isTrue();
+    }
+
+    @Test
+    void shouldInvokePreRelease() {
+
+        AtomicBoolean wasCalled = new AtomicBoolean();
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, c -> Mono.fromRunnable(() -> wasCalled.set(true)));
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        assertThat(wasCalled).isTrue();
+    }
+
+    @Test
+    void shouldInvokePreReleaseInOrder() {
+
+        List<String> order = new ArrayList<>();
+
+        ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
+        reset(pooledRefMock);
+        setup(connectionMock);
+
+        when(connectionMock.preRelease()).thenAnswer(it -> {
+            order.add("Lifecycle.preRelease");
+            return Mono.fromRunnable(() -> order.add("Lifecycle.preRelease.subscribe"));
+        });
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, c -> {
+            order.add("preRelease");
+            return Mono.fromRunnable(() -> order.add("preRelease.subscribe"));
+        });
+
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        assertThat(order).containsExactly("preRelease", "preRelease.subscribe", "Lifecycle.preRelease", "Lifecycle.preRelease.subscribe");
+    }
+
+    interface ConnectionWithLifecycle extends Connection, Lifecycle {
+
     }
 
 }

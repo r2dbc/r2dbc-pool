@@ -16,16 +16,16 @@ Configuration of the `ConnectionPool` can be accomplished in several ways:
 
 ```java
 // Creates a ConnectionPool wrapping an underlying ConnectionFactory 
-ConnectionFactory pooledConnectionFactory=ConnectionFactories.get("r2dbc:pool:<my-driver>://<host>:<port>/<database>[?maxIdleTime=PT60S[&…]");
+ConnectionFactory pooledConnectionFactory = ConnectionFactories.get("r2dbc:pool:<my-driver>://<host>:<port>/<database>[?maxIdleTime=PT60S[&…]");
 
-Publisher<?extends Connection> connectionPublisher=pooledConnectionFactory.create();
+Publisher<?extends Connection> connectionPublisher = pooledConnectionFactory.create();
 ```
 
 **Programmatic Connection Factory Discovery**
 
 ```java
 // Creates a ConnectionPool wrapping an underlying ConnectionFactory
-ConnectionFactory pooledConnectionFactory=ConnectionFactories.get(ConnectionFactoryOptions.builder()
+ConnectionFactory pooledConnectionFactory = ConnectionFactories.get(ConnectionFactoryOptions.builder()
         .option(DRIVER,"pool")
         .option(PROTOCOL,"postgresql") // driver identifier, PROTOCOL is delegated as DRIVER by the pool.
         .option(HOST,"…")
@@ -39,10 +39,10 @@ ConnectionFactory pooledConnectionFactory=ConnectionFactories.get(ConnectionFact
 The delegated `DRIVER` (via `PROTOCOL`) above refers to the r2dbc-driver, such as `h2`, `postgresql`, `mssql`, `mysql`, `spanner`.
 
 ```java
-Publisher<?extends Connection> pooledConnectionFactory=connectionFactory.create();
+Publisher<?extends Connection> pooledConnectionFactory = connectionFactory.create();
 
 // Alternative: Creating a Mono using Project Reactor
-Mono<Connection> connectionMono=Mono.from(pooledConnectionFactory.create());
+Mono<Connection> connectionMono = Mono.from(pooledConnectionFactory.create());
 ```
 
 **Supported ConnectionFactory Discovery Options**
@@ -60,6 +60,8 @@ Mono<Connection> connectionMono=Mono.from(pooledConnectionFactory.create());
 | `maxAcquireTime`          | Maximum time to acquire connection from pool. Negative values indicate no timeout. Defaults to no timeout.
 | `maxCreateConnectionTime` | Maximum time to create a new connection. Negative values indicate no timeout. Defaults to no timeout.
 | `poolName`                | Name of the Connection Pool.
+| `postAllocate`            | Lifecycle function to prepare a connection after allocating it.
+| `preRelease `             | Lifecycle function to prepare/cleanup a connection before releasing it.
 | `registerJmx`             | Whether to register the pool to JMX.
 | `validationDepth`         | Validation depth used to validate an R2DBC connection. Defaults to `LOCAL`.
 | `validationQuery`         | Query that will be executed just before a connection is given to you from the pool to validate that the connection to the database is still alive.
@@ -70,7 +72,7 @@ All other properties are driver-specific.
 
 ```java
 // Creates a ConnectionFactory for the specified DRIVER
-ConnectionFactory connectionFactory=ConnectionFactories.get(ConnectionFactoryOptions.builder()
+ConnectionFactory connectionFactory = ConnectionFactories.get(ConnectionFactoryOptions.builder()
         .option(DRIVER,"postgresql")
         .option(HOST,"…")
         .option(PORT,"…")
@@ -80,12 +82,12 @@ ConnectionFactory connectionFactory=ConnectionFactories.get(ConnectionFactoryOpt
         .build());
 
 // Create a ConnectionPool for connectionFactory
-ConnectionPoolConfiguration configuration=ConnectionPoolConfiguration.builder(connectionFactory)
+ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
         .maxIdleTime(Duration.ofMillis(1000))
         .maxSize(20)
         .build();
 
-ConnectionPool pool=new ConnectionPool(configuration);
+ConnectionPool pool = new ConnectionPool(configuration);
 
 Mono<Connection> connectionMono = pool.create();
 
@@ -96,6 +98,21 @@ Mono<Void> release = connection.close(); // released the connection back to the 
 
 // application shutdown
 pool.dispose();
+```
+
+## `Lifecycle` support
+
+The R2DBC specification defines as of version 0.9 lifecycle support for connections (`Lifecycle.postAllocate`, `Lifecycle.preRelease`). R2DBC Pool integrates with connections that implement lifecycle methods by inspecting the actual connection. `postAllocate` is called after allocating a connection and before returning it to the caller. `preRelease` is called upon `Connection.close()`, right before returning the connection into the pool. Any error signals in `postAllocate` are propagated to the allocation subscriber. Error signals of `preRelease` are logged and suppressed. In both cases, error signals lead to immediate invalidation of the connection.
+
+Additionally, the pool accepts custom `postAllocate` and `preRelease` functions through the builder to prepare the connection or to cleanup the connection before returning it into the pool. Custom lifecycle methods are called within the `Lifecycle` closure to ensure the connection-side lifecycle.
+
+```java
+ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
+    .preRelease(connection -> Flux.from(connection.createStatement("SET schema = …").execute()).flatMap(Result::getRowsUpdated).then())
+    .postAllocate(Connection::rollbackTransaction)
+    .build();
+
+ConnectionPool pool = new ConnectionPool(configuration);
 ```
 
 ### Maven configuration

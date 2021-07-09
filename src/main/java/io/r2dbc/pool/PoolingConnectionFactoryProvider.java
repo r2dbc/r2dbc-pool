@@ -16,14 +16,17 @@
 
 package io.r2dbc.pool;
 
+import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactories;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryOptions;
 import io.r2dbc.spi.ConnectionFactoryProvider;
 import io.r2dbc.spi.Option;
 import io.r2dbc.spi.ValidationDepth;
+import org.reactivestreams.Publisher;
 
 import java.time.Duration;
+import java.util.function.Function;
 
 import static io.r2dbc.pool.ConnectionPoolConfiguration.Builder;
 import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
@@ -108,6 +111,20 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public static final Option<Boolean> REGISTER_JMX = Option.valueOf("registerJmx");
 
     /**
+     * {@link Option} to configure a {@code Lifecycle.postAllocate} function.
+     *
+     * @since 0.9
+     */
+    public static final Option<Function<? super Connection, ? extends Publisher<Void>>> POST_ALLOCATE = Option.valueOf("postAllocate");
+
+    /**
+     * {@link Option} to configure a {@code Lifecycle.preRelease} function.
+     *
+     * @since 0.9
+     */
+    public static final Option<Function<? super Connection, ? extends Publisher<Void>>> PRE_RELEASE = Option.valueOf("preRelease");
+
+    /**
      * ValidationQuery {@link Option}.
      */
     public static final Option<String> VALIDATION_QUERY = Option.valueOf("validationQuery");
@@ -172,6 +189,8 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         mapper.from(MAX_IDLE_TIME).as(OptionMapper::toDuration).to(builder::maxIdleTime);
         mapper.from(MAX_CREATE_CONNECTION_TIME).as(OptionMapper::toDuration).to(builder::maxCreateConnectionTime);
         mapper.fromExact(POOL_NAME).to(builder::name);
+        mapper.fromExact(POST_ALLOCATE).to(builder::postAllocate);
+        mapper.fromExact(PRE_RELEASE).to(builder::preRelease);
         mapper.from(REGISTER_JMX).as(OptionMapper::toBoolean).to(builder::registerJmx);
         mapper.fromExact(VALIDATION_QUERY).to(builder::validationQuery);
         mapper.from(VALIDATION_DEPTH).as(validationDepth -> OptionMapper.toEnum(validationDepth, ValidationDepth.class)).to(builder::validationDepth);

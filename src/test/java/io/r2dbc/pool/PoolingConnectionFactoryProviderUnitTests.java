@@ -27,6 +27,7 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.function.Function;
 
 import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -170,6 +171,22 @@ final class PoolingConnectionFactoryProviderUnitTests {
 
         assertThat(configuration)
             .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ofMinutes(30));
+    }
+
+    @Test
+    void shouldApplyLifecycleFunctions() {
+
+        ConnectionFactoryOptions.Builder builder = ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?registerJmx=true&poolName=requiredHere").mutate();
+
+        Function<? super Connection, ? extends Publisher<Void>> postAllocate = connection -> Mono.empty().checkpoint("postAllocate").then();
+        Function<? super Connection, ? extends Publisher<Void>> preRelease = connection -> Mono.empty().checkpoint("preRelease").then();
+
+        ConnectionFactoryOptions options = builder.option(PoolingConnectionFactoryProvider.POST_ALLOCATE, postAllocate)
+            .option(PoolingConnectionFactoryProvider.PRE_RELEASE, preRelease).build();
+
+        assertThat(PoolingConnectionFactoryProvider.buildConfiguration(options))
+            .hasFieldOrPropertyWithValue("postAllocate", postAllocate)
+            .hasFieldOrPropertyWithValue("preRelease", preRelease);
     }
 
     @Test

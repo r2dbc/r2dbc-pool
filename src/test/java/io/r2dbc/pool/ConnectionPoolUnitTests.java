@@ -19,6 +19,7 @@ package io.r2dbc.pool;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
+import io.r2dbc.spi.Lifecycle;
 import io.r2dbc.spi.R2dbcTimeoutException;
 import io.r2dbc.spi.ValidationDepth;
 import io.r2dbc.spi.Wrapped;
@@ -44,6 +45,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -856,6 +858,80 @@ final class ConnectionPoolUnitTests {
         new ConnectionPool(configuration);
     }
 
+    @Test
+    void shouldInvokeLifecyclePostAllocate() {
+
+        AtomicBoolean wasCalled = new AtomicBoolean();
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
+        when(connectionMock.postAllocate()).thenReturn(Mono.fromRunnable(() -> wasCalled.set(true)));
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+        pool.create().as(StepVerifier::create).expectNextCount(1).verifyComplete();
+
+        assertThat(wasCalled).isTrue();
+    }
+
+    @Test
+    void shouldInvokePostAllocate() {
+
+        AtomicBoolean wasCalled = new AtomicBoolean();
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .postAllocate(connection -> Mono.fromRunnable(() -> wasCalled.set(true)))
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+        pool.create().as(StepVerifier::create).expectNextCount(1).verifyComplete();
+
+        assertThat(wasCalled).isTrue();
+    }
+
+    @Test
+    void shouldInvokePostAllocateInOrder() {
+
+        List<String> order = new ArrayList<>();
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
+        when(connectionMock.postAllocate()).thenAnswer(it -> {
+            order.add("Lifecycle.postAllocate");
+            return Mono.fromRunnable(() -> order.add("Lifecycle.postAllocate.subscribe"));
+        });
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .postAllocate(connection -> {
+                order.add("postAllocate");
+                return Mono.fromRunnable(() -> order.add("postAllocate.subscribe"));
+            })
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+        pool.create().as(StepVerifier::create).expectNextCount(1).verifyComplete();
+
+        assertThat(order).containsExactly("Lifecycle.postAllocate", "Lifecycle.postAllocate.subscribe", "postAllocate", "postAllocate.subscribe");
+    }
+
+    interface ConnectionWithLifecycle extends Connection, Lifecycle {
+
+    }
+
     private ConnectionPool createConnectionPoolForDisposeTest(Connection connectionMock) {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
 
@@ -911,6 +987,7 @@ final class ConnectionPoolUnitTests {
         public void setDelay(Duration delay) {
             this.delay = delay;
         }
+
     }
 
     /**
@@ -955,5 +1032,7 @@ final class ConnectionPoolUnitTests {
         public int getCreateCount() {
             return this.createCounter.get();
         }
+
     }
+
 }

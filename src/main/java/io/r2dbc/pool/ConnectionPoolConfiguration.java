@@ -18,7 +18,9 @@ package io.r2dbc.pool;
 
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
+import io.r2dbc.spi.Lifecycle;
 import io.r2dbc.spi.ValidationDepth;
+import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 import reactor.pool.PoolBuilder;
 import reactor.pool.PoolConfig;
@@ -28,6 +30,7 @@ import reactor.util.annotation.Nullable;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Connection pool configuration.
@@ -73,6 +76,12 @@ public final class ConnectionPoolConfiguration {
     @Nullable
     private final String name;
 
+    @Nullable
+    private final Function<? super Connection, ? extends Publisher<Void>> postAllocate;
+
+    @Nullable
+    private final Function<? super Connection, ? extends Publisher<Void>> preRelease;
+
     private final boolean registerJmx;
 
     private final ValidationDepth validationDepth;
@@ -81,9 +90,10 @@ public final class ConnectionPoolConfiguration {
     private final String validationQuery;
 
     private ConnectionPoolConfiguration(int acquireRetry, @Nullable Duration backgroundEvictionInterval, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ?
-        extends PoolConfig<? extends Connection>>> customizer,
-                                        int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
-                                        PoolMetricsRecorder metricsRecorder, @Nullable String name, boolean registerJmx, ValidationDepth validationDepth, @Nullable String validationQuery) {
+        extends PoolConfig<? extends Connection>>> customizer, int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
+                                        PoolMetricsRecorder metricsRecorder, @Nullable String name, @Nullable Function<? super Connection, ? extends Publisher<Void>> postAllocate,
+                                        @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, boolean registerJmx, ValidationDepth validationDepth,
+                                        @Nullable String validationQuery) {
         this.acquireRetry = acquireRetry;
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.clock = clock;
@@ -97,6 +107,8 @@ public final class ConnectionPoolConfiguration {
         this.metricsRecorder = metricsRecorder;
         this.name = name;
         this.registerJmx = registerJmx;
+        this.postAllocate = postAllocate;
+        this.preRelease = preRelease;
         this.validationDepth = validationDepth;
         this.validationQuery = validationQuery;
         this.backgroundEvictionInterval = backgroundEvictionInterval;
@@ -175,6 +187,16 @@ public final class ConnectionPoolConfiguration {
         return this.name;
     }
 
+    @Nullable
+    Function<? super Connection, ? extends Publisher<Void>> getPostAllocate() {
+        return this.postAllocate;
+    }
+
+    @Nullable
+    Function<? super Connection, ? extends Publisher<Void>> getPreRelease() {
+        return this.preRelease;
+    }
+
     boolean isRegisterJmx() {
         return this.registerJmx;
     }
@@ -226,6 +248,12 @@ public final class ConnectionPoolConfiguration {
         private String name;
 
         private boolean registerJmx;
+
+        @Nullable
+        private Function<? super Connection, ? extends Publisher<Void>> postAllocate;
+
+        @Nullable
+        private Function<? super Connection, ? extends Publisher<Void>> preRelease;
 
         @Nullable
         private String validationQuery;
@@ -398,6 +426,40 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
+         * Configure a {@link Lifecycle#postAllocate()} callback function. This {@link Function} is called with a {@link Connection} object that was allocated from the pool before emitting it
+         * through {@link ConnectionFactory#create()}.
+         * The connection emission is delayed until the returned {@link Publisher} has completed. Any error signals from this publisher lead to immediate disposal of the connection.
+         * If a {@link Connection} implements {@link Lifecycle}, the given function is called once {@link Lifecycle#postAllocate()} has completed.
+         *
+         * @param postAllocate function applied to {@link Connection} returning a publisher to perform actions before returning the connection to the caller
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code postAllocate} is {@code null}
+         * @since 0.9
+         */
+        public Builder postAllocate(Function<? super Connection, ? extends Publisher<Void>> postAllocate) {
+            this.postAllocate = Assert.requireNonNull(postAllocate, "postAllocate must not be null");
+            return this;
+        }
+
+        /**
+         * Configure a {@link Lifecycle#preRelease()} callback function. This {@link Function} is called with a {@link Connection} object that is about to be returned to the pool right before
+         * releasing it.
+         * through {@link Connection#close()}.
+         * The connection release is delayed until the returned {@link Publisher} has completed. Any error signals from this publisher lead to immediate disposal of the connection instead of
+         * returning it to the pool.
+         * If a {@link Connection} implements {@link Lifecycle}, the given function is called before invoking {@link Lifecycle#preRelease()}.
+         *
+         * @param preRelease function applied to {@link Connection} returning a publisher to perform actions before releasing the connection
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code preRelease} is {@code null}
+         * @since 0.9
+         */
+        public Builder preRelease(Function<? super Connection, ? extends Publisher<Void>> preRelease) {
+            this.preRelease = Assert.requireNonNull(preRelease, "postAllocate must not be null");
+            return this;
+        }
+
+        /**
          * Configure whether to register to JMX. Defaults to {@code false}.
          *
          * @param registerJmx register the pool to JMX
@@ -455,9 +517,8 @@ public final class ConnectionPoolConfiguration {
             applyDefaults();
             validate();
             return new ConnectionPoolConfiguration(this.acquireRetry, this.backgroundEvictionInterval, this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize,
-                this.maxIdleTime,
-                this.maxCreateConnectionTime,
-                this.maxAcquireTime, this.maxLifeTime, this.metricsRecorder, this.name, this.registerJmx, this.validationDepth, this.validationQuery
+                this.maxIdleTime, this.maxCreateConnectionTime, this.maxAcquireTime, this.maxLifeTime, this.metricsRecorder, this.name, this.postAllocate, this.preRelease, this.registerJmx,
+                this.validationDepth, this.validationQuery
             );
         }
 
@@ -506,6 +567,8 @@ public final class ConnectionPoolConfiguration {
                 ", maxLifeTime='" + this.maxLifeTime + '\'' +
                 ", metricsRecorder='" + this.metricsRecorder + '\'' +
                 ", name='" + this.name + '\'' +
+                ", postAllocate='" + this.postAllocate + '\'' +
+                ", preRelease='" + this.preRelease + '\'' +
                 ", registerJmx='" + this.registerJmx + '\'' +
                 ", validationDepth='" + this.validationDepth + '\'' +
                 ", validationQuery='" + this.validationQuery + '\'' +

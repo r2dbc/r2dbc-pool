@@ -20,8 +20,10 @@ import io.r2dbc.spi.Closeable;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
+import io.r2dbc.spi.Lifecycle;
 import io.r2dbc.spi.R2dbcTimeoutException;
 import io.r2dbc.spi.Wrapped;
+import org.reactivestreams.Publisher;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -33,6 +35,7 @@ import reactor.pool.PooledRef;
 import reactor.pool.PooledRefMetadata;
 import reactor.util.Logger;
 import reactor.util.Loggers;
+import reactor.util.annotation.Nullable;
 
 import javax.management.JMException;
 import javax.management.MBeanServer;
@@ -73,6 +76,9 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     private final Mono<Connection> create;
 
+    @Nullable
+    private final Function<? super Connection, ? extends Publisher<Void>> preRelease;
+
     /**
      * Creates a new connection factory.
      *
@@ -84,6 +90,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         this.factory = configuration.getConnectionFactory();
         this.maxAcquireTime = configuration.getMaxAcquireTime();
         this.poolMetrics = Optional.ofNullable(this.connectionPool.metrics()).map(PoolMetricsWrapper::new);
+        this.preRelease = configuration.getPreRelease();
 
         if (configuration.isRegisterJmx()) {
             getMetrics().ifPresent(poolMetrics -> {
@@ -110,7 +117,24 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                 })
                 .flatMap(ref -> {
 
-                    PooledConnection connection = new PooledConnection(ref);
+                    Mono<Void> prepare = null;
+                    if (ref.poolable() instanceof Lifecycle) {
+                        prepare = Mono.from(((Lifecycle) ref.poolable()).postAllocate());
+                    }
+
+                    if (configuration.getPostAllocate() != null) {
+
+                        Mono<Void> postAllocate = Mono.defer(() -> Mono.from(configuration.getPostAllocate().apply(ref.poolable())));
+                        prepare = prepare == null ? postAllocate : prepare.then(postAllocate);
+                    }
+
+                    return prepare == null ? Mono.just(ref) : prepare.thenReturn(ref).onErrorResume(throwable -> {
+                        return ref.invalidate().then(Mono.error(throwable));
+                    });
+                })
+                .flatMap(ref -> {
+
+                    PooledConnection connection = new PooledConnection(ref, this.preRelease);
                     return allocateValidation.apply(connection).thenReturn((Connection) connection).onErrorResume(throwable -> {
                         return ref.invalidate().then(Mono.error(throwable));
                     });

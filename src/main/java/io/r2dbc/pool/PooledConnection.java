@@ -20,6 +20,7 @@ import io.r2dbc.spi.Batch;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionMetadata;
 import io.r2dbc.spi.IsolationLevel;
+import io.r2dbc.spi.Lifecycle;
 import io.r2dbc.spi.Statement;
 import io.r2dbc.spi.TransactionDefinition;
 import io.r2dbc.spi.ValidationDepth;
@@ -29,8 +30,10 @@ import reactor.core.publisher.Mono;
 import reactor.pool.PooledRef;
 import reactor.util.Logger;
 import reactor.util.Loggers;
+import reactor.util.annotation.Nullable;
 
 import java.time.Duration;
+import java.util.function.Function;
 
 /**
  * Pooled {@link Connection} implementation. Performs a cleanup on {@link #close()} if used transactionally.
@@ -53,20 +56,41 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     private volatile boolean inTransaction = false;
 
     PooledConnection(PooledRef<Connection> ref) {
+        this(ref, null);
+    }
+
+    PooledConnection(PooledRef<Connection> ref, @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease) {
         this.ref = ref;
         this.connection = ref.poolable();
         this.release = Mono.defer(() -> {
             return Validation.validate(this, ValidationDepth.LOCAL).then(Mono.defer(() -> {
 
-                Mono<Void> cleanup = Mono.empty();
-                if (this.inTransaction) {
-                    cleanup = rollbackTransaction().onErrorResume(throwable -> Mono.empty()).then();
+                Mono<Void> cleanup = null;
+
+                if (preRelease != null) {
+                    cleanup = Mono.from(preRelease.apply(this.connection)).onErrorResume(throwable -> handleCleanupError(throwable, ref));
                 }
 
-                return cleanup.doOnSubscribe(ignore -> this.closed = true).then(this.ref.release());
+                if (this.inTransaction) {
+                    Mono<Void> rollback = rollbackTransaction().onErrorResume(throwable -> Mono.empty());
+                    cleanup = cleanup == null ? rollback : cleanup.then(rollback);
+                }
 
-            })).onErrorResume(throwable -> ref.invalidate()).doOnSubscribe(subscription -> logger.debug("Releasing connection"));
+                if (this.connection instanceof Lifecycle) {
+
+                    Mono<Void> lifecyclePreRelease = Mono.defer(() -> Mono.from(((Lifecycle) this.connection).preRelease()));
+                    cleanup = cleanup == null ? lifecyclePreRelease : cleanup.then(lifecyclePreRelease);
+                }
+
+                return (cleanup == null ? Mono.empty() : cleanup).doOnSubscribe(ignore -> this.closed = true).then(this.ref.release());
+            })).onErrorResume(throwable -> handleCleanupError(throwable, ref)).doOnSubscribe(subscription -> logger.debug("Releasing connection"));
         });
+    }
+
+    private static Mono<Void> handleCleanupError(Throwable throwable, PooledRef<Connection> ref) {
+
+        logger.debug("Release failed", throwable);
+        return ref.invalidate();
     }
 
     @Override
