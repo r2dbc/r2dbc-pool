@@ -28,6 +28,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
 import org.springframework.util.ReflectionUtils;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -43,6 +44,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -926,6 +928,44 @@ final class ConnectionPoolUnitTests {
         pool.create().as(StepVerifier::create).expectNextCount(1).verifyComplete();
 
         assertThat(order).containsExactly("Lifecycle.postAllocate", "Lifecycle.postAllocate.subscribe", "postAllocate", "postAllocate.subscribe");
+    }
+
+    @Test
+    void cancelDuringAllocationShouldCompleteAtomically() throws InterruptedException {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
+
+        CountDownLatch prepareLatch = new CountDownLatch(1);
+        CountDownLatch validateLatch = new CountDownLatch(1);
+        AtomicBoolean seenCancel = new AtomicBoolean();
+        Mono<Void> prepare = Mono.<Void>empty().delayElement(Duration.ofMillis(100)).doOnSuccess(s -> prepareLatch.countDown()).doOnCancel(() -> {
+            seenCancel.set(true);
+        });
+        Mono<Boolean> validate = Mono.just(true).delayElement(Duration.ofSeconds(1)).doOnSuccess(s -> validateLatch.countDown()).doOnCancel(() -> {
+            seenCancel.set(true);
+        });
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(validate);
+        when(connectionMock.postAllocate()).thenReturn(prepare);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+        Disposable subscribe = pool.create().subscribe();
+        prepareLatch.await();
+        subscribe.dispose();
+        validateLatch.await();
+
+        PoolMetrics poolMetrics = pool.getMetrics().get();
+        await().atMost(Duration.ofSeconds(1)).until(() -> poolMetrics.idleSize() == 10);
+
+        assertThat(seenCancel).isFalse();
+        assertThat(poolMetrics.pendingAcquireSize()).isEqualTo(0);
+        assertThat(poolMetrics.allocatedSize()).isEqualTo(10);
+        assertThat(poolMetrics.idleSize()).isEqualTo(10);
     }
 
     interface ConnectionWithLifecycle extends Connection, Lifecycle {

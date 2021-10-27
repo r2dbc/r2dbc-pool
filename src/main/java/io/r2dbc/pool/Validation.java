@@ -38,7 +38,7 @@ final class Validation {
         return Flux.from(connection.validate(depth)).handle((state, sink) -> {
 
             if (state) {
-                sink.complete();
+                sink.next(state);
                 return;
             }
 

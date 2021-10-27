@@ -48,6 +48,7 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
@@ -98,21 +99,22 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             });
         }
 
-        String acqName = String.format("Connection Acquisition from [%s]", configuration.getConnectionFactory());
-        String timeoutMessage = String.format("Connection Acquisition timed out after %dms", this.maxAcquireTime.toMillis());
+        String acqName = String.format("Connection acquisition from [%s]", configuration.getConnectionFactory());
+        String timeoutMessage = String.format("Connection acquisition timed out after %dms", this.maxAcquireTime.toMillis());
 
         Function<Connection, Mono<Void>> allocateValidation = getValidationFunction(configuration);
 
         Mono<Connection> create = Mono.defer(() -> {
 
             AtomicReference<PooledRef<Connection>> emitted = new AtomicReference<>();
+            AtomicBoolean cancelled = new AtomicBoolean();
 
             Mono<Connection> mono = this.connectionPool.acquire()
                 .doOnNext(emitted::set)
                 .doOnSubscribe(subscription -> {
 
                     if (logger.isDebugEnabled()) {
-                        logger.debug("Obtaining new connection from the driver");
+                        logger.debug("Obtaining new connection from the pool");
                     }
                 })
                 .flatMap(ref -> {
@@ -128,24 +130,23 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                         prepare = prepare == null ? postAllocate : prepare.then(postAllocate);
                     }
 
-                    return prepare == null ? Mono.just(ref) : prepare.thenReturn(ref).onErrorResume(throwable -> {
-                        return ref.invalidate().then(Mono.error(throwable));
-                    });
-                })
-                .flatMap(ref -> {
-
-                    PooledConnection connection = new PooledConnection(ref, this.preRelease);
-                    return allocateValidation.apply(connection).thenReturn((Connection) connection).onErrorResume(throwable -> {
-                        return ref.invalidate().then(Mono.error(throwable));
-                    });
-                })
-                .doOnCancel(() -> {
-
-                    PooledRef<Connection> ref = emitted.get();
-                    if (ref != null && emitted.compareAndSet(ref, null)) {
-                        ref.release().subscribe();
+                    Mono<Connection> conn;
+                    if (prepare == null) {
+                        conn = getValidConnection(allocateValidation, ref);
+                    } else {
+                        conn = prepare.then(getValidConnection(allocateValidation, ref));
                     }
-                }).name(acqName);
+
+                    return conn.onErrorResume(throwable -> {
+                            emitted.set(null); // prevent release on cancel
+                            return ref.invalidate().then(Mono.error(throwable));
+                        })
+                        .doFinally(s -> cleanup(cancelled, emitted))
+                        .as(self -> Operators.discardOnCancel(self, () -> cancelled.set(true)));
+                })
+                .as(self -> Operators.discardOnCancel(self, () -> cancelled.set(true)))
+                .name(acqName)
+                .doOnNext(it -> emitted.set(null));
 
             if (!this.maxAcquireTime.isNegative()) {
                 mono = mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e));
@@ -153,6 +154,24 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             return mono;
         });
         this.create = configuration.getAcquireRetry() > 0 ? create.retry(configuration.getAcquireRetry()) : create;
+    }
+
+    static void cleanup(AtomicBoolean cancelled, AtomicReference<PooledRef<Connection>> emitted) {
+
+        if (cancelled.compareAndSet(true, false)) {
+
+            PooledRef<Connection> savedRef = emitted.get();
+            if (savedRef != null && emitted.compareAndSet(savedRef, null)) {
+                logger.debug("Releasing connection after cancellation");
+                savedRef.release().subscribe(ignore -> {
+                }, e -> logger.warn("Error during release", e));
+            }
+        }
+    }
+
+    private Mono<Connection> getValidConnection(Function<Connection, Mono<Void>> allocateValidation, PooledRef<Connection> ref) {
+        PooledConnection connection = new PooledConnection(ref, this.preRelease);
+        return allocateValidation.apply(connection).thenReturn(connection);
     }
 
     private Function<Connection, Mono<Void>> getValidationFunction(ConnectionPoolConfiguration configuration) {
