@@ -27,6 +27,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
 import org.springframework.util.ReflectionUtils;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -42,8 +43,10 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -829,6 +832,40 @@ final class ConnectionPoolUnitTests {
             .build();
 
         new ConnectionPool(configuration);
+    }
+
+    @Test
+    void cancelDuringAllocationShouldCompleteAtomically() throws InterruptedException {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        CountDownLatch validateLatch = new CountDownLatch(1);
+        CountDownLatch postLatch = new CountDownLatch(1);
+        AtomicBoolean seenCancel = new AtomicBoolean();
+        Mono<Boolean> validate = Mono.just(true).doOnSuccess(s -> validateLatch.countDown()).delayElement(Duration.ofSeconds(1)).doOnSuccess(s -> postLatch.countDown()).doOnCancel(() -> {
+            seenCancel.set(true);
+        });
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(validate);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+        Disposable subscribe = pool.create().subscribe();
+        validateLatch.await();
+        subscribe.dispose();
+        postLatch.await();
+
+        PoolMetrics poolMetrics = pool.getMetrics().get();
+        await().atMost(Duration.ofSeconds(1)).until(() -> poolMetrics.idleSize() == 10);
+
+        assertThat(seenCancel).isFalse();
+        assertThat(poolMetrics.pendingAcquireSize()).isEqualTo(0);
+        assertThat(poolMetrics.allocatedSize()).isEqualTo(10);
+        assertThat(poolMetrics.idleSize()).isEqualTo(10);
     }
 
     private ConnectionPool createConnectionPoolForDisposeTest(Connection connectionMock) {
