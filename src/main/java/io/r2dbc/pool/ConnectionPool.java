@@ -141,10 +141,14 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                             emitted.set(null); // prevent release on cancel
                             return ref.invalidate().then(Mono.error(throwable));
                         })
-                        .doFinally(s -> cleanup(cancelled, emitted))
-                        .as(self -> Operators.discardOnCancel(self, () -> cancelled.set(true)));
+                        .doFinally(s -> cleanup(cancelled, emitted));
                 })
-                .as(self -> Operators.discardOnCancel(self, () -> cancelled.set(true)))
+                .as(self -> Operators.discardOnCancel(self, () -> {
+
+                    // cancel upstream to interrupt connection allocation.
+                    cancelled.set(true);
+                    return emitted.get() == null;
+                }))
                 .name(acqName)
                 .doOnNext(it -> emitted.set(null));
 

@@ -19,6 +19,8 @@ package io.r2dbc.pool;
 import org.reactivestreams.Subscription;
 import reactor.core.publisher.Mono;
 
+import java.util.function.BooleanSupplier;
+
 /**
  * Operator utility.
  *
@@ -40,8 +42,7 @@ final class Operators {
      * @return decorated {@link Mono}.
      */
     public static <T> Mono<T> discardOnCancel(Mono<? extends T> source) {
-        return new MonoDiscardOnCancel<>(source, () -> {
-        });
+        return new MonoDiscardOnCancel<>(source, () -> false);
     }
 
     /**
@@ -51,13 +52,14 @@ final class Operators {
      * previous frames on the stack.
      * <p>Propagate the {@link Subscription#cancel()}  signal to a {@link Runnable consumer}.
      *
-     * @param source         the source to decorate.
-     * @param cancelConsumer {@link Runnable} notified when the resulting {@link Mono} receives a {@link Subscription#cancel() cancel} signal.
-     * @param <T>            The type of values in both source and output sequences.
+     * @param source   the source to decorate.
+     * @param onCancel {@link BooleanSupplier} notified when the resulting {@link Mono} receives a {@link Subscription#cancel() cancel} signal. Expects the callback to return a boolean flag whether
+     *                 to propagate the cancellation signal upstream via {@code true} or {@code false} to drain the items and suppress upstream cancellation.
+     * @param <T>      The type of values in both source and output sequences.
      * @return decorated {@link Mono}.
      */
-    public static <T> Mono<T> discardOnCancel(Mono<? extends T> source, Runnable cancelConsumer) {
-        return new MonoDiscardOnCancel<>(source, cancelConsumer);
+    public static <T> Mono<T> discardOnCancel(Mono<? extends T> source, BooleanSupplier onCancel) {
+        return new MonoDiscardOnCancel<>(source, onCancel);
     }
 
 }
