@@ -27,6 +27,7 @@ import reactor.util.Loggers;
 import reactor.util.context.Context;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 /**
  * A decorating operator that replays signals from its source to a {@link Subscriber} and drains the source upon {@link Subscription#cancel() cancel} and drops data signals until termination.
@@ -37,9 +38,9 @@ class MonoDiscardOnCancel<T> extends MonoOperator<T, T> {
 
     private static final Logger logger = Loggers.getLogger(MonoDiscardOnCancel.class);
 
-    private final Runnable cancelConsumer;
+    private final BooleanSupplier cancelConsumer;
 
-    MonoDiscardOnCancel(Mono<? extends T> source, Runnable cancelConsumer) {
+    MonoDiscardOnCancel(Mono<? extends T> source, BooleanSupplier cancelConsumer) {
         super(source);
         this.cancelConsumer = cancelConsumer;
     }
@@ -55,15 +56,20 @@ class MonoDiscardOnCancel<T> extends MonoOperator<T, T> {
 
         final Context ctx;
 
-        final Runnable cancelConsumer;
+        final BooleanSupplier cancelConsumer;
 
         Subscription s;
 
-        MonoDiscardOnCancelSubscriber(CoreSubscriber<T> actual, Runnable cancelConsumer) {
+        MonoDiscardOnCancelSubscriber(CoreSubscriber<T> actual, BooleanSupplier cancelConsumer) {
 
             this.actual = actual;
             this.ctx = actual.currentContext();
             this.cancelConsumer = cancelConsumer;
+        }
+
+        @Override
+        public Context currentContext() {
+            return this.ctx;
         }
 
         @Override
@@ -113,7 +119,11 @@ class MonoDiscardOnCancel<T> extends MonoOperator<T, T> {
                     logger.debug("received cancel signal");
                 }
                 try {
-                    this.cancelConsumer.run();
+                    boolean mayCancelUpstream = this.cancelConsumer.getAsBoolean();
+                    if (mayCancelUpstream) {
+                        this.s.cancel();
+                        return;
+                    }
                 } catch (Exception e) {
                     Operators.onErrorDropped(e, this.ctx);
                 }
