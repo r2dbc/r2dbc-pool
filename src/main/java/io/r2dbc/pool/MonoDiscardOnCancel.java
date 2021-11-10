@@ -115,8 +115,8 @@ class MonoDiscardOnCancel<T> extends MonoOperator<T, T> {
         public void cancel() {
 
             if (compareAndSet(false, true)) {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("received cancel signal");
+                if (logger.isTraceEnabled()) {
+                    logger.trace("received cancel signal");
                 }
                 try {
                     boolean mayCancelUpstream = this.cancelConsumer.getAsBoolean();

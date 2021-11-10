@@ -31,7 +31,6 @@ import reactor.pool.InstrumentedPool;
 import reactor.pool.PoolBuilder;
 import reactor.pool.PoolConfig;
 import reactor.pool.PoolMetricsRecorder;
-import reactor.pool.PooledRef;
 import reactor.pool.PooledRefMetadata;
 import reactor.util.Logger;
 import reactor.util.Loggers;
@@ -48,8 +47,6 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -86,6 +83,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
      * @param configuration the configuration to use for building the connection pool.
      * @throws IllegalArgumentException if {@code configuration} is {@code null}
      */
+    @SuppressWarnings("unchecked")
     public ConnectionPool(ConnectionPoolConfiguration configuration) {
         this.connectionPool = createConnectionPool(Assert.requireNonNull(configuration, "ConnectionPoolConfiguration must not be null"));
         this.factory = configuration.getConnectionFactory();
@@ -106,18 +104,12 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         Mono<Connection> create = Mono.defer(() -> {
 
-            AtomicReference<PooledRef<Connection>> emitted = new AtomicReference<>();
-            AtomicBoolean cancelled = new AtomicBoolean();
-
             Mono<Connection> mono = this.connectionPool.acquire()
-                .doOnNext(emitted::set)
-                .doOnSubscribe(subscription -> {
+                .flatMap(ref -> {
 
                     if (logger.isDebugEnabled()) {
                         logger.debug("Obtaining new connection from the pool");
                     }
-                })
-                .flatMap(ref -> {
 
                     Mono<Void> prepare = null;
                     if (ref.poolable() instanceof Lifecycle) {
@@ -130,27 +122,22 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                         prepare = prepare == null ? postAllocate : prepare.then(postAllocate);
                     }
 
+                    PooledConnection connection = new PooledConnection(ref, this.preRelease);
                     Mono<Connection> conn;
                     if (prepare == null) {
-                        conn = getValidConnection(allocateValidation, ref);
+                        conn = getValidConnection(allocateValidation, connection);
                     } else {
-                        conn = prepare.then(getValidConnection(allocateValidation, ref));
+                        conn = prepare.then(getValidConnection(allocateValidation, connection));
                     }
 
-                    return conn.onErrorResume(throwable -> {
-                            emitted.set(null); // prevent release on cancel
-                            return ref.invalidate().then(Mono.error(throwable));
-                        })
-                        .doFinally(s -> cleanup(cancelled, emitted));
-                })
-                .as(self -> Operators.discardOnCancel(self, () -> {
+                    conn = conn.onErrorResume(throwable -> ref.invalidate().then(Mono.error(throwable)));
 
-                    // cancel upstream to interrupt connection allocation.
-                    cancelled.set(true);
-                    return emitted.get() == null;
-                }))
-                .name(acqName)
-                .doOnNext(it -> emitted.set(null));
+                    return Operators.discardOnCancel(conn, () -> {
+                        ref.release().subscribe();
+                        return false;
+                    });
+                })
+                .name(acqName);
 
             if (!this.maxAcquireTime.isNegative()) {
                 mono = mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e));
@@ -158,23 +145,10 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             return mono;
         });
         this.create = configuration.getAcquireRetry() > 0 ? create.retry(configuration.getAcquireRetry()) : create;
+
     }
 
-    static void cleanup(AtomicBoolean cancelled, AtomicReference<PooledRef<Connection>> emitted) {
-
-        if (cancelled.compareAndSet(true, false)) {
-
-            PooledRef<Connection> savedRef = emitted.get();
-            if (savedRef != null && emitted.compareAndSet(savedRef, null)) {
-                logger.debug("Releasing connection after cancellation");
-                savedRef.release().subscribe(ignore -> {
-                }, e -> logger.warn("Error during release", e));
-            }
-        }
-    }
-
-    private Mono<Connection> getValidConnection(Function<Connection, Mono<Void>> allocateValidation, PooledRef<Connection> ref) {
-        PooledConnection connection = new PooledConnection(ref, this.preRelease);
+    private Mono<Connection> getValidConnection(Function<Connection, Mono<Void>> allocateValidation, Connection connection) {
         return allocateValidation.apply(connection).thenReturn(connection);
     }
 

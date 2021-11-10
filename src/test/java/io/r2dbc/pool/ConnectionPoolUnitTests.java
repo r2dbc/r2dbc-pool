@@ -228,7 +228,7 @@ final class ConnectionPoolUnitTests {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.defer(() ->
-            Mono.delay(Duration.ofSeconds(15)).thenReturn(connectionMock))
+            Mono.delay(Duration.ofSeconds(5)).thenReturn(connectionMock))
         );
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
@@ -239,7 +239,7 @@ final class ConnectionPoolUnitTests {
 
         StepVerifier.withVirtualTime(pool::create)
             .expectSubscription()
-            .thenAwait(Duration.ofSeconds(11))
+            .thenAwait(Duration.ofSeconds(2))
             .expectError(TimeoutException.class)
             .verify();
 
@@ -942,7 +942,7 @@ final class ConnectionPoolUnitTests {
         Mono<Void> prepare = Mono.<Void>empty().delayElement(Duration.ofMillis(100)).doOnSuccess(s -> prepareLatch.countDown()).doOnCancel(() -> {
             seenCancel.set(true);
         });
-        Mono<Boolean> validate = Mono.just(true).delayElement(Duration.ofSeconds(1)).doOnSuccess(s -> validateLatch.countDown()).doOnCancel(() -> {
+        Mono<Boolean> validate = Mono.just(true).delayElement(Duration.ofMillis(250)).doOnSuccess(s -> validateLatch.countDown()).doOnCancel(() -> {
             seenCancel.set(true);
         });
 
@@ -960,7 +960,7 @@ final class ConnectionPoolUnitTests {
         validateLatch.await();
 
         PoolMetrics poolMetrics = pool.getMetrics().get();
-        await().atMost(Duration.ofSeconds(1)).until(() -> poolMetrics.idleSize() == 10);
+        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.idleSize() == 10);
 
         assertThat(seenCancel).isFalse();
         assertThat(poolMetrics.pendingAcquireSize()).isEqualTo(0);
