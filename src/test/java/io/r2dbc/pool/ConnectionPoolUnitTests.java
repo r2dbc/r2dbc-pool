@@ -843,7 +843,7 @@ final class ConnectionPoolUnitTests {
         CountDownLatch validateLatch = new CountDownLatch(1);
         CountDownLatch postLatch = new CountDownLatch(1);
         AtomicBoolean seenCancel = new AtomicBoolean();
-        Mono<Boolean> validate = Mono.just(true).doOnSuccess(s -> validateLatch.countDown()).delayElement(Duration.ofSeconds(1)).doOnSuccess(s -> postLatch.countDown()).doOnCancel(() -> {
+        Mono<Boolean> validate = Mono.just(true).doOnSuccess(s -> validateLatch.countDown()).delayElement(Duration.ofMillis(250)).doOnSuccess(s -> postLatch.countDown()).doOnCancel(() -> {
             seenCancel.set(true);
         });
 
@@ -860,7 +860,7 @@ final class ConnectionPoolUnitTests {
         postLatch.await();
 
         PoolMetrics poolMetrics = pool.getMetrics().get();
-        await().atMost(Duration.ofSeconds(1)).until(() -> poolMetrics.idleSize() == 10);
+        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.idleSize() == 10);
 
         assertThat(seenCancel).isFalse();
         assertThat(poolMetrics.pendingAcquireSize()).isEqualTo(0);
