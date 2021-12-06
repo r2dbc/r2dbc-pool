@@ -32,17 +32,17 @@
     <url>https://github.com/r2dbc/r2dbc-pool</url>
 
     <properties>
-        <assertj.version>3.20.2</assertj.version>
-        <awaitility.version>4.1.0</awaitility.version>
+        <assertj.version>3.21.0</assertj.version>
+        <awaitility.version>4.1.1</awaitility.version>
         <java.version>1.8</java.version>
         <jsr305.version>3.0.2</jsr305.version>
-        <junit.version>5.7.0</junit.version>
-        <logback.version>1.2.3</logback.version>
-        <mockito.version>3.11.2</mockito.version>
+        <junit.version>5.8.2</junit.version>
+        <logback.version>1.2.7</logback.version>
+        <mockito.version>4.1.0</mockito.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <r2dbc-spi.version>0.9.0.RELEASE</r2dbc-spi.version>
-        <reactor.version>2020.0.9</reactor.version>
+        <reactor.version>2020.0.13</reactor.version>
     </properties>
 
     <licenses>
@@ -201,7 +201,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.0.0-M3</version>
+                <version>3.0.0</version>
                 <executions>
                     <execution>
                         <id>enforce-no-snapshots</id>
@@ -222,7 +222,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.2.0</version>
+                <version>3.3.1</version>
                 <configuration>
                     <links>
                         <link>https://r2dbc.io/spec/${r2dbc-spi.version}/api/</link>
@@ -268,7 +268,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>flatten-maven-plugin</artifactId>
-                <version>1.2.5</version>
+                <version>1.2.7</version>
                 <executions>
                     <execution>
                         <id>flatten</id>
