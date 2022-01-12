@@ -24,7 +24,7 @@
 
     <groupId>io.r2dbc</groupId>
     <artifactId>r2dbc-pool</artifactId>
-    <version>0.9.0.RELEASE</version>
+    <version>0.9.1.BUILD-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>Reactive Relational Database Connectivity - Connection Pooling</name>
