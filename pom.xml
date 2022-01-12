@@ -24,7 +24,7 @@
 
     <groupId>io.r2dbc</groupId>
     <artifactId>r2dbc-pool</artifactId>
-    <version>0.8.8.BUILD-SNAPSHOT</version>
+    <version>0.8.8.RELEASE</version>
     <packaging>jar</packaging>
 
     <name>Reactive Relational Database Connectivity - Connection Pooling</name>
@@ -399,13 +399,5 @@
         </profile>
 
     </profiles>
-
-    <repositories>
-        <repository>
-            <id>sonatype-nexus-snapshots</id>
-            <name>Sonatype OSS Snapshot Repository</name>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-        </repository>
-    </repositories>
 
 </project>
