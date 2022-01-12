@@ -1,6 +1,10 @@
 R2DBC Pool Changelog
 =============================
 
+0.8.8.RELEASE
+-----------------------------------------
+* Connection not released when request is cancelled #140
+
 0.8.7.RELEASE
 -----------------------------------------
 * Upgrade to Reactor Dysprosium SR20 #125
