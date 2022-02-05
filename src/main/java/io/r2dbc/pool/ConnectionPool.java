@@ -209,15 +209,13 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         // current implementation. (https://github.com/reactor/reactor-pool/issues/33)
         // To workaround the issue, here defines an evictionPredicate that performs both maxIdleTime and maxLifeTime check.
         BiPredicate<Connection, PooledRefMetadata> evictionPredicate = (connection, metadata) -> {
-            long maxIdleTimeMills = maxIdleTime.toMillis();
-            long maxLifeTimeMillis = maxLifeTime.toMillis();
-
-            if (maxIdleTimeMills == 0 || maxLifeTimeMillis == 0) {
+            if (maxIdleTime.isZero() || maxLifeTime.isZero()) {
+                // evict immediately
                 return true;
             }
 
-            boolean isIdleTimeExceeded = maxIdleTimeMills > 0 && metadata.idleTime() >= maxIdleTimeMills;
-            boolean isLifeTimeExceeded = maxLifeTimeMillis > 0 && metadata.lifeTime() >= maxLifeTimeMillis;
+            boolean isIdleTimeExceeded = !maxIdleTime.isNegative() && metadata.idleTime() >= maxIdleTime.toMillis();
+            boolean isLifeTimeExceeded = !maxLifeTime.isNegative() && metadata.lifeTime() >= maxLifeTime.toMillis();
             return isIdleTimeExceeded || isLifeTimeExceeded;
         };
 

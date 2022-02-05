@@ -74,9 +74,9 @@ final class ConnectionPoolConfigurationUnitTests {
             .hasFieldOrPropertyWithValue("validationQuery", null)
             .hasFieldOrPropertyWithValue("validationDepth", ValidationDepth.LOCAL)
             .hasFieldOrPropertyWithValue("maxIdleTime", Duration.ofMinutes(30))
-            .hasFieldOrPropertyWithValue("backgroundEvictionInterval", Duration.ofNanos(-1))
-            .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ofNanos(-1))
-            .hasFieldOrPropertyWithValue("maxAcquireTime", Duration.ofNanos(-1))
+            .hasFieldOrPropertyWithValue("backgroundEvictionInterval", Duration.ofMillis(-1))
+            .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ofMillis(-1))
+            .hasFieldOrPropertyWithValue("maxAcquireTime", Duration.ofMillis(-1))
             .hasFieldOrPropertyWithValue("initialSize", 10)
             .hasFieldOrPropertyWithValue("maxSize", 10)
             .hasFieldOrPropertyWithValue("registerJmx", false);
