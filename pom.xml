@@ -41,7 +41,7 @@
         <mockito.version>4.2.0</mockito.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <r2dbc-spi.version>0.9.0.RELEASE</r2dbc-spi.version>
+        <r2dbc-spi.version>1.0.0.BUILD-SNAPSHOT</r2dbc-spi.version>
         <reactor.version>2020.0.15</reactor.version>
     </properties>
 
@@ -399,5 +399,20 @@
         </profile>
 
     </profiles>
+
+    <repositories>
+        <repository>
+            <id>spring-libs-milestone</id>
+            <url>https://repo.spring.io/libs-milestone</url>
+        </repository>
+
+        <repository>
+            <id>oss-sonatype-snapshots</id>
+            <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
 
 </project>
