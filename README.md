@@ -18,7 +18,8 @@ Configuration of the `ConnectionPool` can be accomplished in several ways:
 // Creates a ConnectionPool wrapping an underlying ConnectionFactory 
 ConnectionFactory pooledConnectionFactory = ConnectionFactories.get("r2dbc:pool:<my-driver>://<host>:<port>/<database>[?maxIdleTime=PT60S[&…]");
 
-Publisher<?extends Connection> connectionPublisher = pooledConnectionFactory.create();
+// Make sure to close the connection after usage.
+Publisher<? extends Connection> connectionPublisher = pooledConnectionFactory.create();
 ```
 
 **Programmatic Connection Factory Discovery**
@@ -39,10 +40,14 @@ ConnectionFactory pooledConnectionFactory = ConnectionFactories.get(ConnectionFa
 The delegated `DRIVER` (via `PROTOCOL`) above refers to the r2dbc-driver, such as `h2`, `postgresql`, `mssql`, `mysql`, `spanner`.
 
 ```java
-Publisher<?extends Connection> pooledConnectionFactory = connectionFactory.create();
 
-// Alternative: Creating a Mono using Project Reactor
-Mono<Connection> connectionMono = Mono.from(pooledConnectionFactory.create());
+// Make sure to close the connection after usage.
+Publisher<? extends Connection> connectionPublisher = pooledConnectionFactory.create();
+
+// Creating a Mono using Project Reactor. Using `usingWhen` for resource management and disposal.
+Mono<Object> resultMono = Mono.usingWhen(pooledConnectionFactory.create(),
+        connection -> …,
+        Connection::close);
 ```
 
 **Supported ConnectionFactory Discovery Options**
@@ -89,12 +94,11 @@ ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(
 
 ConnectionPool pool = new ConnectionPool(configuration);
 
-Mono<Connection> connectionMono = pool.create();
 
-// later
-
-Connection connection = …;
-Mono<Void> release = connection.close(); // released the connection back to the pool
+Using `usingWhen` for resource management and disposal.
+Mono<Object> resultMono = Mono.usingWhen(pooledConnectionFactory.create(), // allocates a connection from the pool
+        connection -> …,    // you get hold of the connection to run queries, manage transactions, …
+        Connection::close); // releases the connection back to the pool
 
 // application shutdown
 pool.dispose();
@@ -147,8 +151,8 @@ If you'd rather like the latest snapshots of the upcoming major version, use our
 
 Having trouble with R2DBC? We'd love to help!
 
-* Check the [spec documentation](https://r2dbc.io/spec/0.9.0.M1/spec/html/), and [Javadoc](https://r2dbc.io/spec/0.9.0.M1/api/).
-* If you are upgrading, check out the [changelog](https://r2dbc.io/spec/0.9.0.M1/CHANGELOG.txt) for "new and noteworthy" features.
+* Check the [spec documentation](https://r2dbc.io/spec/1.0.0.RELEASE/spec/html/), and [Javadoc](https://r2dbc.io/spec/1.0.0.RELEASE/api/).
+* If you are upgrading, check out the [changelog](https://r2dbc.io/spec/1.0.0.RELEASE/CHANGELOG.txt) for "new and noteworthy" features.
 * Ask a question - we monitor [stackoverflow.com](https://stackoverflow.com) for questions
   tagged with [`r2dbc`](https://stackoverflow.com/tags/r2dbc). 
   You can also chat with the community on [Gitter](https://gitter.im/r2dbc/r2dbc).
