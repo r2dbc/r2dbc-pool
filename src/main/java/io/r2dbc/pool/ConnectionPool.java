@@ -226,7 +226,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             .metricsRecorder(metricsRecorder)
             .evictionPredicate(evictionPredicate)
             .destroyHandler(Connection::close)
-            .sizeBetween(0, Runtime.getRuntime().availableProcessors());
+            .sizeBetween(0, Runtime.getRuntime().availableProcessors())
+            .idleResourceReuseMruOrder(); // MRU to support eviction of idle
 
         if (maxSize == -1 || initialSize > 0) {
             builder.sizeBetween(Math.max(0, initialSize), maxSize == -1 ? Integer.MAX_VALUE : maxSize);
