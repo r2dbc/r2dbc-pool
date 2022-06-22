@@ -47,7 +47,7 @@ public final class ConnectionPoolConfiguration {
     /**
      * Constant indicating that timeout should not apply.
      */
-    public static final Duration NO_TIMEOUT = Duration.ofNanos(-1);
+    public static final Duration NO_TIMEOUT = Duration.ofMillis(-1);
 
     private final int acquireRetry;
 
@@ -351,7 +351,6 @@ public final class ConnectionPoolConfiguration {
          *
          * @param maxIdleTime the maximum idle time. {@link Duration#ZERO} means immediate connection disposal. A negative or a {@code null} value results in not applying a timeout.
          * @return this {@link Builder}
-         * @throws IllegalArgumentException if {@code maxIdleTime} is {@code null} or negative value.
          */
         public Builder maxIdleTime(@Nullable Duration maxIdleTime) {
             this.maxIdleTime = applyDefault(maxIdleTime);
@@ -365,7 +364,6 @@ public final class ConnectionPoolConfiguration {
          *                                {@link Duration#ZERO} indicates immediate failure if the connection is not created immediately. A negative or a {@code null} value results in not applying
          *                                a timeout.
          * @return this {@link Builder}
-         * @throws IllegalArgumentException if {@code maxCreateConnectionTime} is {@code null} or negative.
          */
         public Builder maxCreateConnectionTime(@Nullable Duration maxCreateConnectionTime) {
             this.maxCreateConnectionTime = applyDefault(maxCreateConnectionTime);
@@ -381,7 +379,6 @@ public final class ConnectionPoolConfiguration {
          * @param maxAcquireTime the maximum time to acquire connection from pool. {@link Duration#ZERO} indicates that the connection must be immediately available
          *                       otherwise acquisition fails. A negative or a {@code null} value results in not applying a timeout.
          * @return this {@link Builder}
-         * @throws IllegalArgumentException if {@code maxAcquireTime} is negative.
          */
         public Builder maxAcquireTime(@Nullable Duration maxAcquireTime) {
             this.maxAcquireTime = applyDefault(maxAcquireTime);
@@ -394,7 +391,6 @@ public final class ConnectionPoolConfiguration {
          * @param maxLifeTime the maximum lifetime of the connection in the pool,.
          *                    {@link Duration#ZERO} indicates immediate connection disposal. A negative or a {@code null} value results in not applying a timeout.
          * @return this {@link Builder}
-         * @throws IllegalArgumentException if {@code maxLifeTime} is negative.
          */
         public Builder maxLifeTime(Duration maxLifeTime) {
             this.maxLifeTime = applyDefault(maxLifeTime);
