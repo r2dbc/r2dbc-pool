@@ -459,7 +459,7 @@ final class ConnectionPoolUnitTests {
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactory)
             .initialSize(0)
-            .maxIdleTime(Duration.ofMillis(-1))
+            .maxIdleTime(Duration.ofNanos(-1))
             .build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
