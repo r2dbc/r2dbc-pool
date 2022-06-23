@@ -69,6 +69,13 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public static final Option<Integer> MAX_SIZE = Option.valueOf("maxSize");
 
     /**
+     * MinIdle {@link Option}.
+     *
+     * @since 0.9.1
+     */
+    public static final Option<Integer> MIN_IDLE = Option.valueOf("minIdle");
+
+    /**
      * MaxLifeTime {@link Option}.
      *
      * @since 0.8.3
@@ -134,7 +141,6 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
      */
     public static final Option<ValidationDepth> VALIDATION_DEPTH = Option.valueOf("validationDepth");
 
-
     private static final String COLON = ":";
 
     /**
@@ -183,6 +189,7 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         mapper.from(BACKGROUND_EVICTION_INTERVAL).as(OptionMapper::toDuration).to(builder::backgroundEvictionInterval);
         mapper.from(INITIAL_SIZE).as(OptionMapper::toInteger).to(builder::initialSize);
         mapper.from(MAX_SIZE).as(OptionMapper::toInteger).to(builder::maxSize);
+        mapper.from(MIN_IDLE).as(OptionMapper::toInteger).to(builder::minIdle);
         mapper.from(ACQUIRE_RETRY).as(OptionMapper::toInteger).to(builder::acquireRetry);
         mapper.from(MAX_LIFE_TIME).as(OptionMapper::toDuration).to(builder::maxLifeTime);
         mapper.from(MAX_ACQUIRE_TIME).as(OptionMapper::toDuration).to(builder::maxAcquireTime);
@@ -211,4 +218,5 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public String getDriver() {
         return POOLING_DRIVER;
     }
+
 }
