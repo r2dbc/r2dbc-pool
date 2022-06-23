@@ -26,6 +26,8 @@ import io.r2dbc.spi.test.MockConnection;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 import org.springframework.util.ReflectionUtils;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
@@ -43,6 +45,8 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -53,6 +57,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static java.lang.String.format;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
@@ -866,6 +871,96 @@ final class ConnectionPoolUnitTests {
         assertThat(poolMetrics.pendingAcquireSize()).isEqualTo(0);
         assertThat(poolMetrics.allocatedSize()).isEqualTo(10);
         assertThat(poolMetrics.idleSize()).isEqualTo(10);
+    }
+
+    @Test
+    void cancelDuringAllocationShouldReleaseConnection() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.just(true));
+
+        AtomicReference<Subscriber<? super Boolean>> subRef = new AtomicReference<>();
+        Subscription subscription = new Subscription() {
+
+            @Override
+            public void request(long n) {
+
+            }
+
+            @Override
+            public void cancel() {
+            }
+        };
+        Publisher<Boolean> validationPublisher = subscriber -> {
+            subscriber.onSubscribe(subscription);
+            subRef.set(subscriber);
+        };
+
+        when(connectionMock.validate(any())).thenReturn(validationPublisher);
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxAcquireTime(Duration.ofMillis(150)).acquireRetry(0)
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+        CompletableFuture<Connection> future = pool.create().toFuture();
+
+        assertThatExceptionOfType(CompletionException.class).isThrownBy(future::join);
+
+        subRef.get().onNext(true);
+        subRef.get().onComplete();
+
+        PoolMetrics poolMetrics = pool.getMetrics().get();
+        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.idleSize() == 1);
+
+        assertThat(poolMetrics.pendingAcquireSize()).isEqualTo(0);
+        assertThat(poolMetrics.allocatedSize()).isEqualTo(1);
+        assertThat(poolMetrics.idleSize()).isEqualTo(1);
+    }
+
+    @Test
+    void cancelDuringCreationShouldCloseConnection() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        AtomicReference<Subscriber<? super Connection>> subRef = new AtomicReference<>();
+        AtomicBoolean canceled = new AtomicBoolean();
+        AtomicBoolean closed = new AtomicBoolean();
+        Subscription subscription = new Subscription() {
+
+            @Override
+            public void request(long n) {
+
+            }
+
+            @Override
+            public void cancel() {
+                canceled.set(true);
+            }
+        };
+        Publisher<Connection> connectionPublisher = subscriber -> {
+            subscriber.onSubscribe(subscription);
+            subRef.set(subscriber);
+        };
+
+        when(connectionMock.close()).thenReturn(Mono.<Void>empty().doOnSubscribe(it -> closed.set(true)));
+        when(connectionFactoryMock.create()).thenReturn(Mono.from((Publisher) connectionPublisher));
+        when(connectionMock.validate(any())).thenReturn(Mono.just(true));
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxCreateConnectionTime(Duration.ofMillis(1)).acquireRetry(0)
+            .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+        CompletableFuture<Connection> future = pool.create().toFuture();
+        assertThatExceptionOfType(CompletionException.class).isThrownBy(future::join);
+
+        subRef.get().onNext(connectionMock);
+        subRef.get().onComplete();
+
+        assertThat(closed).isTrue();
     }
 
     private ConnectionPool createConnectionPoolForDisposeTest(Connection connectionMock) {

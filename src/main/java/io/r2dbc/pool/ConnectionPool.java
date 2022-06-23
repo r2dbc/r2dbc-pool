@@ -59,6 +59,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     private static final Logger logger = Loggers.getLogger(ConnectionPool.class);
 
+    private static final String HOOK_ON_DROPPED = "reactor.onNextDropped.local";
+
     private final ConnectionFactory factory;
 
     private final InstrumentedPool<Connection> connectionPool;
@@ -115,7 +117,26 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                 .name(acqName);
 
             if (!this.maxAcquireTime.isZero()) {
-                mono = mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e));
+
+                Consumer<Object> disposeConnection = dropped -> {
+                    if (dropped instanceof PooledConnection) {
+                        Mono.from(((PooledConnection) dropped).close()).subscribe();
+                    }
+                };
+
+                mono = mono.timeout(this.maxAcquireTime).subscriberContext(context -> {
+
+                    Consumer<Object> onNextDropped = context.getOrEmpty(HOOK_ON_DROPPED).map(it -> (Consumer<Object>) it).map(it -> {
+
+                        return (Consumer<Object>) dropped -> {
+                            disposeConnection.accept(dropped);
+                            it.accept(dropped);
+                        };
+
+                    }).orElse(disposeConnection);
+
+                    return context.put(HOOK_ON_DROPPED, onNextDropped);
+                }).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e));
             }
             return mono;
         });
@@ -158,6 +179,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         return this.connectionPool.warmup();
     }
 
+    @SuppressWarnings("unchecked")
     private InstrumentedPool<Connection> createConnectionPool(ConnectionPoolConfiguration configuration) {
 
         ConnectionFactory factory = configuration.getConnectionFactory();
@@ -176,7 +198,26 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         // set timeout for create connection
         Mono<Connection> allocator = Mono.<Connection>from(factory.create()).name("Connection Allocation");
         if (!maxCreateConnectionTime.isZero()) {
-            allocator = allocator.timeout(maxCreateConnectionTime);
+
+            Consumer<Object> disposeConnection = dropped -> {
+                if (dropped instanceof Connection) {
+                    Mono.from(((Connection) dropped).close()).subscribe();
+                }
+            };
+
+            allocator = allocator.timeout(maxCreateConnectionTime).subscriberContext(context -> {
+
+                Consumer<Object> onNextDropped = context.getOrEmpty(HOOK_ON_DROPPED).map(it -> (Consumer<Object>) it).map(it -> {
+
+                    return (Consumer<Object>) dropped -> {
+                        disposeConnection.accept(dropped);
+                        it.accept(dropped);
+                    };
+
+                }).orElse(disposeConnection);
+
+                return context.put(HOOK_ON_DROPPED, onNextDropped);
+            });
         }
 
         // Create eviction predicate that checks maxIdleTime and maxLifeTime.
