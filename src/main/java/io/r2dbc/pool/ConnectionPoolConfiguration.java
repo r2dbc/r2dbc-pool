@@ -63,6 +63,8 @@ public final class ConnectionPoolConfiguration {
 
     private final int maxSize;
 
+    private final int minIdle;
+
     private final Duration maxIdleTime;
 
     private final Duration maxCreateConnectionTime;
@@ -90,7 +92,8 @@ public final class ConnectionPoolConfiguration {
     private final String validationQuery;
 
     private ConnectionPoolConfiguration(int acquireRetry, @Nullable Duration backgroundEvictionInterval, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ?
-        extends PoolConfig<? extends Connection>>> customizer, int initialSize, int maxSize, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime, Duration maxLifeTime,
+        extends PoolConfig<? extends Connection>>> customizer, int initialSize, int maxSize, int minIdle, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime,
+                                        Duration maxLifeTime,
                                         PoolMetricsRecorder metricsRecorder, @Nullable String name, @Nullable Function<? super Connection, ? extends Publisher<Void>> postAllocate,
                                         @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, boolean registerJmx, ValidationDepth validationDepth,
                                         @Nullable String validationQuery) {
@@ -100,6 +103,7 @@ public final class ConnectionPoolConfiguration {
         this.customizer = customizer;
         this.initialSize = initialSize;
         this.maxSize = maxSize;
+        this.minIdle = minIdle;
         this.maxIdleTime = maxIdleTime;
         this.maxCreateConnectionTime = maxCreateConnectionTime;
         this.maxAcquireTime = maxAcquireTime;
@@ -154,16 +158,20 @@ public final class ConnectionPoolConfiguration {
         return this.customizer;
     }
 
-    Duration getMaxIdleTime() {
-        return this.maxIdleTime;
-    }
-
     int getInitialSize() {
         return this.initialSize;
     }
 
+    int getMinIdle() {
+        return this.minIdle;
+    }
+
     int getMaxSize() {
         return this.maxSize;
+    }
+
+    Duration getMaxIdleTime() {
+        return this.maxIdleTime;
     }
 
     Duration getMaxCreateConnectionTime() {
@@ -233,6 +241,8 @@ public final class ConnectionPoolConfiguration {
         private Integer initialSize;
 
         private Integer maxSize;
+
+        private int minIdle;
 
         private Duration maxIdleTime = Duration.ofMinutes(30);
 
@@ -327,6 +337,22 @@ public final class ConnectionPoolConfiguration {
                 throw new IllegalArgumentException("Initial pool size must be equal greater zero");
             }
             this.initialSize = initialSize;
+            return this;
+        }
+
+        /**
+         * Configure the minimal number of idle connections. Defaults to {@code 0}.
+         *
+         * @param minIdle the minimal amount of idle connections in the pool, must not be negative.
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code minIdle} is negative.
+         * @since 0.9.1
+         */
+        public Builder minIdle(int minIdle) {
+            if (minIdle < 0) {
+                throw new IllegalArgumentException("Minimal idle size must be greater or equal to zero");
+            }
+            this.minIdle = minIdle;
             return this;
         }
 
@@ -513,6 +539,7 @@ public final class ConnectionPoolConfiguration {
             applyDefaults();
             validate();
             return new ConnectionPoolConfiguration(this.acquireRetry, this.backgroundEvictionInterval, this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize,
+                this.minIdle,
                 this.maxIdleTime, this.maxCreateConnectionTime, this.maxAcquireTime, this.maxLifeTime, this.metricsRecorder, this.name, this.postAllocate, this.preRelease, this.registerJmx,
                 this.validationDepth, this.validationQuery
             );
@@ -557,6 +584,7 @@ public final class ConnectionPoolConfiguration {
                 ", clock='" + this.clock + '\'' +
                 ", initialSize='" + this.initialSize + '\'' +
                 ", maxSize='" + this.maxSize + '\'' +
+                ", minIdle='" + this.minIdle + '\'' +
                 ", maxIdleTime='" + this.maxIdleTime + '\'' +
                 ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +
                 ", maxAcquireTime='" + this.maxAcquireTime + '\'' +

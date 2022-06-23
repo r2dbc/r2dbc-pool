@@ -260,18 +260,19 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             return isIdleTimeExceeded || isLifeTimeExceeded;
         };
 
+        int cpuCount = Runtime.getRuntime().availableProcessors();
         PoolBuilder<Connection, PoolConfig<Connection>> builder = PoolBuilder.from(allocator)
             .clock(configuration.getClock())
             .metricsRecorder(metricsRecorder)
             .evictionPredicate(evictionPredicate)
             .destroyHandler(Connection::close)
-            .sizeBetween(0, Runtime.getRuntime().availableProcessors())
+            .sizeBetween(Math.min(configuration.getMinIdle(), cpuCount), cpuCount)
             .idleResourceReuseMruOrder(); // MRU to support eviction of idle
 
         if (maxSize == -1 || initialSize > 0) {
-            builder.sizeBetween(Math.max(0, initialSize), maxSize == -1 ? Integer.MAX_VALUE : maxSize);
+            builder.sizeBetween(Math.max(configuration.getMinIdle(), initialSize), maxSize == -1 ? Integer.MAX_VALUE : maxSize);
         } else {
-            builder.sizeBetween(initialSize, maxSize);
+            builder.sizeBetween(Math.max(configuration.getMinIdle(), initialSize), maxSize);
         }
 
         Duration backgroundEvictionInterval = configuration.getBackgroundEvictionInterval();

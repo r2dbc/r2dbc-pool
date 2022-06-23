@@ -158,6 +158,26 @@ final class ConnectionPoolUnitTests {
 
     @Test
     @SuppressWarnings("unchecked")
+    void shouldConsiderMinIdle() {
+
+        AtomicInteger creations = new AtomicInteger();
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+        when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnNext(it -> creations.incrementAndGet()));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).minIdle(5).initialSize(0).maxSize(10).build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        pool.warmup().as(StepVerifier::create).expectNext(5).verifyComplete();
+
+        verify(connectionFactoryMock).create();
+        assertThat(creations).hasValue(5);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void shouldConsiderCustomizer() {
 
         AtomicInteger creations = new AtomicInteger();

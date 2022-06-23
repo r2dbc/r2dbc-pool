@@ -104,15 +104,16 @@ final class PoolingConnectionFactoryProviderUnitTests {
     }
 
     @Test
-    void shouldApplyInitialSizeAndMaxSize() {
+    void shouldApplyInitialSizeMinIdleAndMaxSize() {
 
         ConnectionFactoryOptions options =
-            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?initialSize=2&maxSize=12");
+            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?initialSize=2&maxSize=12&minIdle=5");
 
         ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
 
         assertThat(configuration)
             .hasFieldOrPropertyWithValue("initialSize", 2)
+            .hasFieldOrPropertyWithValue("minIdle", 5)
             .hasFieldOrPropertyWithValue("maxSize", 12);
     }
 
