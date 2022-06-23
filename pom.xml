@@ -32,13 +32,13 @@
     <url>https://github.com/r2dbc/r2dbc-pool</url>
 
     <properties>
-        <assertj.version>3.22.0</assertj.version>
-        <awaitility.version>4.1.1</awaitility.version>
+        <assertj.version>3.23.1</assertj.version>
+        <awaitility.version>4.2.0</awaitility.version>
         <java.version>1.8</java.version>
         <jsr305.version>3.0.2</jsr305.version>
         <junit.version>5.8.2</junit.version>
         <logback.version>1.2.9</logback.version>
-        <mockito.version>4.2.0</mockito.version>
+        <mockito.version>4.6.1</mockito.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <r2dbc-spi.version>0.9.0.RELEASE</r2dbc-spi.version>
@@ -162,7 +162,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.8.1</version>
+                <version>3.10.1</version>
                 <configuration>
                     <compilerArgs>
                         <arg>-Werror</arg>
@@ -179,7 +179,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>3.2.0</version>
+                <version>3.2.2</version>
                 <configuration>
                     <archive>
                         <manifest>
@@ -201,7 +201,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.0.0</version>
+                <version>3.1.0</version>
                 <executions>
                     <execution>
                         <id>enforce-no-snapshots</id>
@@ -222,7 +222,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.3.1</version>
+                <version>3.4.0</version>
                 <configuration>
                     <links>
                         <link>https://r2dbc.io/spec/${r2dbc-spi.version}/api/</link>
@@ -336,7 +336,7 @@
                         <plugin>
                             <groupId>org.apache.maven.plugins</groupId>
                             <artifactId>maven-gpg-plugin</artifactId>
-                            <version>1.6</version>
+                            <version>3.0.1</version>
                             <executions>
                                 <execution>
                                     <id>sign-artifacts</id>
@@ -359,7 +359,7 @@
                         <plugin>
                             <groupId>org.sonatype.plugins</groupId>
                             <artifactId>nexus-staging-maven-plugin</artifactId>
-                            <version>1.6.8</version>
+                            <version>1.6.13</version>
                             <extensions>true</extensions>
                             <configuration>
                                 <serverId>sonatype</serverId>
