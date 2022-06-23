@@ -1,6 +1,14 @@
 R2DBC Pool Changelog
 =============================
 
+0.9.1.RELEASE
+------------------
+* Default maxLifeTime value result in immediate eviction of all connections #129
+* Support configuration of minimum idle connections #141
+* Expand CI testing to multiple platforms. #156
+* maxCreateConnectionTime may cause connection leak #165
+* Connections are reused in LRU order and therefore not idle #166
+
 0.9.0.RELEASE
 ------------------
 * Upgrade dependencies #149
