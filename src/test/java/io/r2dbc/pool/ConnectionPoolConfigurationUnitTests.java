@@ -44,6 +44,7 @@ final class ConnectionPoolConfigurationUnitTests {
             .backgroundEvictionInterval(Duration.ofMillis(2000))
             .maxCreateConnectionTime(Duration.ofMinutes(1))
             .maxAcquireTime(Duration.ofMinutes(2))
+            .maxValidationTime(Duration.ofMinutes(1))
             .initialSize(2)
             .maxSize(20)
             .name("bar")
@@ -57,6 +58,7 @@ final class ConnectionPoolConfigurationUnitTests {
             .hasFieldOrPropertyWithValue("backgroundEvictionInterval", Duration.ofMillis(2000))
             .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ofMinutes(1))
             .hasFieldOrPropertyWithValue("maxAcquireTime", Duration.ofMinutes(2))
+            .hasFieldOrPropertyWithValue("maxValidationTime", Duration.ofMinutes(1))
             .hasFieldOrPropertyWithValue("initialSize", 2)
             .hasFieldOrPropertyWithValue("maxSize", 20)
             .hasFieldOrPropertyWithValue("name", "bar")
@@ -77,6 +79,7 @@ final class ConnectionPoolConfigurationUnitTests {
             .hasFieldOrPropertyWithValue("backgroundEvictionInterval", Duration.ofMillis(-1))
             .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ofMillis(-1))
             .hasFieldOrPropertyWithValue("maxAcquireTime", Duration.ofMillis(-1))
+            .hasFieldOrPropertyWithValue("maxValidationTime", Duration.ofMillis(-1))
             .hasFieldOrPropertyWithValue("initialSize", 10)
             .hasFieldOrPropertyWithValue("maxSize", 10)
             .hasFieldOrPropertyWithValue("registerJmx", false);

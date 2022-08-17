@@ -175,6 +175,18 @@ final class PoolingConnectionFactoryProviderUnitTests {
     }
 
     @Test
+    void shouldApplyMaxValidationTime() {
+
+        ConnectionFactoryOptions options =
+            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?maxValidationTime=PT30M");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("maxValidationTime", Duration.ofMinutes(30));
+    }
+
+    @Test
     void shouldApplyLifecycleFunctions() {
 
         ConnectionFactoryOptions.Builder builder = ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?registerJmx=true&poolName=requiredHere").mutate();
