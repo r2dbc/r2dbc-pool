@@ -141,6 +141,11 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
      */
     public static final Option<ValidationDepth> VALIDATION_DEPTH = Option.valueOf("validationDepth");
 
+    /**
+     * MaxValidationTime {@link Option}.
+     */
+    public static final Option<Duration> MAX_VALIDATION_TIME = Option.valueOf("maxValidationTime");
+
     private static final String COLON = ":";
 
     /**
@@ -201,6 +206,7 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         mapper.from(REGISTER_JMX).as(OptionMapper::toBoolean).to(builder::registerJmx);
         mapper.fromExact(VALIDATION_QUERY).to(builder::validationQuery);
         mapper.from(VALIDATION_DEPTH).as(validationDepth -> OptionMapper.toEnum(validationDepth, ValidationDepth.class)).to(builder::validationDepth);
+        mapper.from(MAX_VALIDATION_TIME).as(OptionMapper::toDuration).to(builder::maxValidationTime);
 
         return builder.build();
     }

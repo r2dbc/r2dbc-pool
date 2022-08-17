@@ -359,6 +359,37 @@ final class ConnectionPoolUnitTests {
 
     @Test
     @SuppressWarnings("unchecked")
+    void shouldTimeoutValidation() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.defer(() ->
+            Mono.delay(Duration.ofSeconds(1)).thenReturn(connectionMock))
+        );
+        when(connectionMock.validate(any())).thenReturn(Mono.defer(() ->
+            Mono.delay(Duration.ofSeconds(10)).thenReturn(false))
+        );
+        when(connectionMock.close()).thenReturn(Mono.empty());
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .acquireRetry(0)
+            .maxValidationTime(Duration.ofSeconds(5))
+            .maxAcquireTime(Duration.ofSeconds(15))
+            .build();
+
+        StepVerifier.withVirtualTime(() -> new ConnectionPool(configuration).create())
+            .expectSubscription()
+            .thenAwait(Duration.ofSeconds(7))
+            .expectError(R2dbcTimeoutException.class)
+            .verify();
+
+        verify(connectionFactoryMock).create();
+        verify(connectionMock).close();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void shouldReusePooledConnectionAfterTimeout() {
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);

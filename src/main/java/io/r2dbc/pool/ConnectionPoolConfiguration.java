@@ -91,12 +91,14 @@ public final class ConnectionPoolConfiguration {
     @Nullable
     private final String validationQuery;
 
+    private final Duration maxValidationTime;
+
     private ConnectionPoolConfiguration(int acquireRetry, @Nullable Duration backgroundEvictionInterval, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ?
         extends PoolConfig<? extends Connection>>> customizer, int initialSize, int maxSize, int minIdle, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime,
                                         Duration maxLifeTime,
                                         PoolMetricsRecorder metricsRecorder, @Nullable String name, @Nullable Function<? super Connection, ? extends Publisher<Void>> postAllocate,
                                         @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, boolean registerJmx, ValidationDepth validationDepth,
-                                        @Nullable String validationQuery) {
+                                        @Nullable String validationQuery, Duration maxValidationTime) {
         this.acquireRetry = acquireRetry;
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.clock = clock;
@@ -116,6 +118,7 @@ public final class ConnectionPoolConfiguration {
         this.validationDepth = validationDepth;
         this.validationQuery = validationQuery;
         this.backgroundEvictionInterval = backgroundEvictionInterval;
+        this.maxValidationTime = maxValidationTime;
     }
 
     /**
@@ -218,6 +221,11 @@ public final class ConnectionPoolConfiguration {
         return this.validationQuery;
     }
 
+    @Nullable
+    Duration getMaxValidationTime() {
+        return this.maxValidationTime;
+    }
+
     /**
      * A builder for {@link ConnectionPoolConfiguration} instances.
      * <p>
@@ -269,6 +277,8 @@ public final class ConnectionPoolConfiguration {
         private String validationQuery;
 
         private ValidationDepth validationDepth = ValidationDepth.LOCAL;
+
+        private Duration maxValidationTime = NO_TIMEOUT;  // negative value indicates no-timeout
 
         private Builder() {
         }
@@ -530,6 +540,18 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
+         * Configure {@link Duration timeout} for validating a {@link Connection} from pool. Default is no timeout.
+         *
+         * @param maxValidationTime the maximum time to validate connection from pool. {@link Duration#ZERO} indicates that the connection must be immediately validated
+         *          otherwise validation fails. A negative or a {@code null} value results in not applying a timeout.
+         * @return this {@link Builder}
+         */
+        public Builder maxValidationTime(Duration maxValidationTime) {
+            this.maxValidationTime = applyDefault(maxValidationTime);
+            return this;
+        }
+
+        /**
          * Returns a configured {@link ConnectionPoolConfiguration}.
          *
          * @return a configured {@link ConnectionPoolConfiguration}
@@ -541,7 +563,7 @@ public final class ConnectionPoolConfiguration {
             return new ConnectionPoolConfiguration(this.acquireRetry, this.backgroundEvictionInterval, this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize,
                 this.minIdle,
                 this.maxIdleTime, this.maxCreateConnectionTime, this.maxAcquireTime, this.maxLifeTime, this.metricsRecorder, this.name, this.postAllocate, this.preRelease, this.registerJmx,
-                this.validationDepth, this.validationQuery
+                this.validationDepth, this.validationQuery, this.maxValidationTime
             );
         }
 
@@ -596,6 +618,7 @@ public final class ConnectionPoolConfiguration {
                 ", registerJmx='" + this.registerJmx + '\'' +
                 ", validationDepth='" + this.validationDepth + '\'' +
                 ", validationQuery='" + this.validationQuery + '\'' +
+                ", maxValidationTime='" + this.maxValidationTime + '\'' +
                 '}';
         }
 

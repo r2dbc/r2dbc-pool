@@ -70,6 +70,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     private final Duration maxAcquireTime;
 
+    private final Duration maxValidationTime;
+
     private final List<Runnable> destroyHandlers = new ArrayList<>();
 
     private final Optional<PoolMetrics> poolMetrics;
@@ -90,6 +92,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         this.connectionPool = createConnectionPool(Assert.requireNonNull(configuration, "ConnectionPoolConfiguration must not be null"));
         this.factory = configuration.getConnectionFactory();
         this.maxAcquireTime = configuration.getMaxAcquireTime();
+        this.maxValidationTime = configuration.getMaxValidationTime();
         this.poolMetrics = Optional.ofNullable(this.connectionPool.metrics()).map(PoolMetricsWrapper::new);
         this.preRelease = configuration.getPreRelease();
 
@@ -175,10 +178,10 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     private Function<Connection, Mono<Void>> getValidationFunction(ConnectionPoolConfiguration configuration) {
 
-        String timeoutMessage = String.format("Validation timed out after %dms", this.maxAcquireTime.toMillis());
+        String timeoutMessage = String.format("Validation timed out after %dms", this.maxValidationTime.toMillis());
 
-        if (!this.maxAcquireTime.isNegative()) {
-            return getValidation(configuration).andThen(mono -> mono.timeout(this.maxAcquireTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e)));
+        if (!this.maxValidationTime.isNegative()) {
+            return getValidation(configuration).andThen(mono -> mono.timeout(this.maxValidationTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e)));
         }
 
         return getValidation(configuration);
