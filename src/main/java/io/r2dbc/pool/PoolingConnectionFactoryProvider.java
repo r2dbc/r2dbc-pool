@@ -38,6 +38,7 @@ import static io.r2dbc.spi.ConnectionFactoryOptions.DRIVER;
  * @author Rodolfo Beletatti
  * @author Rodolpho S. Couto
  * @author Todd Ginsberg
+ * @author Gabriel Calin
  */
 public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvider {
 
@@ -76,18 +77,18 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public static final Option<Integer> MIN_IDLE = Option.valueOf("minIdle");
 
     /**
-     * MaxLifeTime {@link Option}.
-     *
-     * @since 0.8.3
-     */
-    public static final Option<Duration> MAX_LIFE_TIME = Option.valueOf("maxLifeTime");
-
-    /**
      * MaxAcquireTime {@link Option}.
      *
      * @since 0.8.3
      */
     public static final Option<Duration> MAX_ACQUIRE_TIME = Option.valueOf("maxAcquireTime");
+
+    /**
+     * MaxCreateConnectionTime {@link Option}.
+     *
+     * @since 0.8.3
+     */
+    public static final Option<Duration> MAX_CREATE_CONNECTION_TIME = Option.valueOf("maxCreateConnectionTime");
 
     /**
      * MaxIdleTime {@link Option}.
@@ -97,11 +98,18 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public static final Option<Duration> MAX_IDLE_TIME = Option.valueOf("maxIdleTime");
 
     /**
-     * MaxCreateConnectionTime {@link Option}.
+     * MaxLifeTime {@link Option}.
      *
      * @since 0.8.3
      */
-    public static final Option<Duration> MAX_CREATE_CONNECTION_TIME = Option.valueOf("maxCreateConnectionTime");
+    public static final Option<Duration> MAX_LIFE_TIME = Option.valueOf("maxLifeTime");
+
+    /**
+     * MaxValidationTime {@link Option}.
+     *
+     * @since 0.9.2
+     */
+    public static final Option<Duration> MAX_VALIDATION_TIME = Option.valueOf("maxValidationTime");
 
     /**
      * Name of the Connection Pool {@link Option}
@@ -140,11 +148,6 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
      * ValidationDepth {@link Option}.
      */
     public static final Option<ValidationDepth> VALIDATION_DEPTH = Option.valueOf("validationDepth");
-
-    /**
-     * MaxValidationTime {@link Option}.
-     */
-    public static final Option<Duration> MAX_VALIDATION_TIME = Option.valueOf("maxValidationTime");
 
     private static final String COLON = ":";
 
@@ -196,17 +199,17 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         mapper.from(MAX_SIZE).as(OptionMapper::toInteger).to(builder::maxSize);
         mapper.from(MIN_IDLE).as(OptionMapper::toInteger).to(builder::minIdle);
         mapper.from(ACQUIRE_RETRY).as(OptionMapper::toInteger).to(builder::acquireRetry);
-        mapper.from(MAX_LIFE_TIME).as(OptionMapper::toDuration).to(builder::maxLifeTime);
         mapper.from(MAX_ACQUIRE_TIME).as(OptionMapper::toDuration).to(builder::maxAcquireTime);
-        mapper.from(MAX_IDLE_TIME).as(OptionMapper::toDuration).to(builder::maxIdleTime);
         mapper.from(MAX_CREATE_CONNECTION_TIME).as(OptionMapper::toDuration).to(builder::maxCreateConnectionTime);
+        mapper.from(MAX_LIFE_TIME).as(OptionMapper::toDuration).to(builder::maxLifeTime);
+        mapper.from(MAX_IDLE_TIME).as(OptionMapper::toDuration).to(builder::maxIdleTime);
+        mapper.from(MAX_VALIDATION_TIME).as(OptionMapper::toDuration).to(builder::maxValidationTime);
         mapper.fromExact(POOL_NAME).to(builder::name);
         mapper.fromExact(POST_ALLOCATE).to(builder::postAllocate);
         mapper.fromExact(PRE_RELEASE).to(builder::preRelease);
         mapper.from(REGISTER_JMX).as(OptionMapper::toBoolean).to(builder::registerJmx);
         mapper.fromExact(VALIDATION_QUERY).to(builder::validationQuery);
         mapper.from(VALIDATION_DEPTH).as(validationDepth -> OptionMapper.toEnum(validationDepth, ValidationDepth.class)).to(builder::validationDepth);
-        mapper.from(MAX_VALIDATION_TIME).as(OptionMapper::toDuration).to(builder::maxValidationTime);
 
         return builder.build();
     }

@@ -41,6 +41,7 @@ import java.util.function.Function;
  * @author Steffen Kreutz
  * @author Rodolfo Beletatti
  * @author Petromir Dzhunev
+ * @author Gabriel Calin
  */
 public final class ConnectionPoolConfiguration {
 
@@ -65,13 +66,15 @@ public final class ConnectionPoolConfiguration {
 
     private final int minIdle;
 
-    private final Duration maxIdleTime;
+    private final Duration maxAcquireTime;
 
     private final Duration maxCreateConnectionTime;
 
-    private final Duration maxAcquireTime;
+    private final Duration maxIdleTime;
 
     private final Duration maxLifeTime;
+
+    private final Duration maxValidationTime;
 
     private final PoolMetricsRecorder metricsRecorder;
 
@@ -91,14 +94,12 @@ public final class ConnectionPoolConfiguration {
     @Nullable
     private final String validationQuery;
 
-    private final Duration maxValidationTime;
-
     private ConnectionPoolConfiguration(int acquireRetry, @Nullable Duration backgroundEvictionInterval, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ?
-        extends PoolConfig<? extends Connection>>> customizer, int initialSize, int maxSize, int minIdle, Duration maxIdleTime, Duration maxCreateConnectionTime, Duration maxAcquireTime,
-                                        Duration maxLifeTime,
-                                        PoolMetricsRecorder metricsRecorder, @Nullable String name, @Nullable Function<? super Connection, ? extends Publisher<Void>> postAllocate,
+        extends PoolConfig<? extends Connection>>> customizer, int initialSize, int maxSize, int minIdle, Duration maxAcquireTime, Duration maxCreateConnectionTime, Duration maxIdleTime,
+                                        Duration maxLifeTime, Duration maxValidationTime, PoolMetricsRecorder metricsRecorder, @Nullable String name,
+                                        @Nullable Function<? super Connection, ? extends Publisher<Void>> postAllocate,
                                         @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, boolean registerJmx, ValidationDepth validationDepth,
-                                        @Nullable String validationQuery, Duration maxValidationTime) {
+                                        @Nullable String validationQuery) {
         this.acquireRetry = acquireRetry;
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.clock = clock;
@@ -107,9 +108,10 @@ public final class ConnectionPoolConfiguration {
         this.maxSize = maxSize;
         this.minIdle = minIdle;
         this.maxIdleTime = maxIdleTime;
-        this.maxCreateConnectionTime = maxCreateConnectionTime;
         this.maxAcquireTime = maxAcquireTime;
+        this.maxCreateConnectionTime = maxCreateConnectionTime;
         this.maxLifeTime = maxLifeTime;
+        this.maxValidationTime = maxValidationTime;
         this.metricsRecorder = metricsRecorder;
         this.name = name;
         this.registerJmx = registerJmx;
@@ -118,7 +120,6 @@ public final class ConnectionPoolConfiguration {
         this.validationDepth = validationDepth;
         this.validationQuery = validationQuery;
         this.backgroundEvictionInterval = backgroundEvictionInterval;
-        this.maxValidationTime = maxValidationTime;
     }
 
     /**
@@ -173,20 +174,24 @@ public final class ConnectionPoolConfiguration {
         return this.maxSize;
     }
 
-    Duration getMaxIdleTime() {
-        return this.maxIdleTime;
+    Duration getMaxAcquireTime() {
+        return this.maxAcquireTime;
     }
 
     Duration getMaxCreateConnectionTime() {
         return this.maxCreateConnectionTime;
     }
 
-    Duration getMaxAcquireTime() {
-        return this.maxAcquireTime;
+    Duration getMaxIdleTime() {
+        return this.maxIdleTime;
     }
 
     Duration getMaxLifeTime() {
         return this.maxLifeTime;
+    }
+
+    Duration getMaxValidationTime() {
+        return this.maxValidationTime;
     }
 
     PoolMetricsRecorder getMetricsRecorder() {
@@ -221,11 +226,6 @@ public final class ConnectionPoolConfiguration {
         return this.validationQuery;
     }
 
-    @Nullable
-    Duration getMaxValidationTime() {
-        return this.maxValidationTime;
-    }
-
     /**
      * A builder for {@link ConnectionPoolConfiguration} instances.
      * <p>
@@ -252,13 +252,15 @@ public final class ConnectionPoolConfiguration {
 
         private int minIdle;
 
-        private Duration maxIdleTime = Duration.ofMinutes(30);
+        private Duration maxAcquireTime = NO_TIMEOUT;  // negative value indicates no-timeout
 
         private Duration maxCreateConnectionTime = NO_TIMEOUT;  // negative value indicates no-timeout
 
-        private Duration maxAcquireTime = NO_TIMEOUT;  // negative value indicates no-timeout
+        private Duration maxIdleTime = Duration.ofMinutes(30);
 
         private Duration maxLifeTime = NO_TIMEOUT;  // negative value indicates no-timeout
+
+        private Duration maxValidationTime = NO_TIMEOUT;  // negative value indicates no-timeout
 
         private PoolMetricsRecorder metricsRecorder = new SimplePoolMetricsRecorder();
 
@@ -277,8 +279,6 @@ public final class ConnectionPoolConfiguration {
         private String validationQuery;
 
         private ValidationDepth validationDepth = ValidationDepth.LOCAL;
-
-        private Duration maxValidationTime = NO_TIMEOUT;  // negative value indicates no-timeout
 
         private Builder() {
         }
@@ -382,14 +382,17 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
-         * Configure a idle {@link Duration timeout}. Defaults to 30 minutes. Configuring {@code maxIdleTime} enables background eviction using the configured idle time as interval unless
-         * {@link #backgroundEvictionInterval(Duration)} is configured.
+         * Configure {@link Duration timeout} for acquiring a {@link Connection} from pool. Default is no timeout.
+         * <p>
+         * When acquiring a {@link Connection} requires obtaining a new {@link Connection} from underlying {@link ConnectionFactory}, this timeout
+         * also applies to get the new one.
          *
-         * @param maxIdleTime the maximum idle time. {@link Duration#ZERO} means immediate connection disposal. A negative or a {@code null} value results in not applying a timeout.
+         * @param maxAcquireTime the maximum time to acquire connection from pool. {@link Duration#ZERO} indicates that the connection must be immediately available
+         *                       otherwise acquisition fails. A negative or a {@code null} value results in not applying a timeout.
          * @return this {@link Builder}
          */
-        public Builder maxIdleTime(@Nullable Duration maxIdleTime) {
-            this.maxIdleTime = applyDefault(maxIdleTime);
+        public Builder maxAcquireTime(@Nullable Duration maxAcquireTime) {
+            this.maxAcquireTime = applyDefault(maxAcquireTime);
             return this;
         }
 
@@ -407,17 +410,14 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
-         * Configure {@link Duration timeout} for acquiring a {@link Connection} from pool. Default is no timeout.
-         * <p>
-         * When acquiring a {@link Connection} requires obtaining a new {@link Connection} from underlying {@link ConnectionFactory}, this timeout
-         * also applies to get the new one.
+         * Configure a idle {@link Duration timeout}. Defaults to 30 minutes. Configuring {@code maxIdleTime} enables background eviction using the configured idle time as interval unless
+         * {@link #backgroundEvictionInterval(Duration)} is configured.
          *
-         * @param maxAcquireTime the maximum time to acquire connection from pool. {@link Duration#ZERO} indicates that the connection must be immediately available
-         *                       otherwise acquisition fails. A negative or a {@code null} value results in not applying a timeout.
+         * @param maxIdleTime the maximum idle time. {@link Duration#ZERO} means immediate connection disposal. A negative or a {@code null} value results in not applying a timeout.
          * @return this {@link Builder}
          */
-        public Builder maxAcquireTime(@Nullable Duration maxAcquireTime) {
-            this.maxAcquireTime = applyDefault(maxAcquireTime);
+        public Builder maxIdleTime(@Nullable Duration maxIdleTime) {
+            this.maxIdleTime = applyDefault(maxIdleTime);
             return this;
         }
 
@@ -430,6 +430,22 @@ public final class ConnectionPoolConfiguration {
          */
         public Builder maxLifeTime(Duration maxLifeTime) {
             this.maxLifeTime = applyDefault(maxLifeTime);
+            return this;
+        }
+
+        /**
+         * Configure {@link Duration timeout} for validating a {@link Connection} from pool. Default is no timeout.
+         *
+         * @param maxValidationTime the maximum time to validate connection from pool. {@link Duration#ZERO} indicates that the connection must be immediately validated
+         *                          otherwise validation fails. A negative or a {@code null} value results in not applying a timeout.
+         * @return this {@link Builder}
+         * @see Connection#validate(ValidationDepth)
+         * @see #validationQuery(String)
+         * @see #validationDepth(ValidationDepth)
+         * @since 0.9.2
+         */
+        public Builder maxValidationTime(Duration maxValidationTime) {
+            this.maxValidationTime = applyDefault(maxValidationTime);
             return this;
         }
 
@@ -540,18 +556,6 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
-         * Configure {@link Duration timeout} for validating a {@link Connection} from pool. Default is no timeout.
-         *
-         * @param maxValidationTime the maximum time to validate connection from pool. {@link Duration#ZERO} indicates that the connection must be immediately validated
-         *          otherwise validation fails. A negative or a {@code null} value results in not applying a timeout.
-         * @return this {@link Builder}
-         */
-        public Builder maxValidationTime(Duration maxValidationTime) {
-            this.maxValidationTime = applyDefault(maxValidationTime);
-            return this;
-        }
-
-        /**
          * Returns a configured {@link ConnectionPoolConfiguration}.
          *
          * @return a configured {@link ConnectionPoolConfiguration}
@@ -562,8 +566,9 @@ public final class ConnectionPoolConfiguration {
             validate();
             return new ConnectionPoolConfiguration(this.acquireRetry, this.backgroundEvictionInterval, this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize,
                 this.minIdle,
-                this.maxIdleTime, this.maxCreateConnectionTime, this.maxAcquireTime, this.maxLifeTime, this.metricsRecorder, this.name, this.postAllocate, this.preRelease, this.registerJmx,
-                this.validationDepth, this.validationQuery, this.maxValidationTime
+                this.maxAcquireTime, this.maxCreateConnectionTime, this.maxIdleTime, this.maxLifeTime, this.maxValidationTime, this.metricsRecorder, this.name, this.postAllocate, this.preRelease,
+                this.registerJmx,
+                this.validationDepth, this.validationQuery
             );
         }
 
@@ -605,12 +610,13 @@ public final class ConnectionPoolConfiguration {
                 ", connectionFactory='" + this.connectionFactory + '\'' +
                 ", clock='" + this.clock + '\'' +
                 ", initialSize='" + this.initialSize + '\'' +
-                ", maxSize='" + this.maxSize + '\'' +
                 ", minIdle='" + this.minIdle + '\'' +
-                ", maxIdleTime='" + this.maxIdleTime + '\'' +
-                ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +
+                ", maxSize='" + this.maxSize + '\'' +
                 ", maxAcquireTime='" + this.maxAcquireTime + '\'' +
+                ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +
+                ", maxIdleTime='" + this.maxIdleTime + '\'' +
                 ", maxLifeTime='" + this.maxLifeTime + '\'' +
+                ", maxValidationTime='" + this.maxValidationTime + '\'' +
                 ", metricsRecorder='" + this.metricsRecorder + '\'' +
                 ", name='" + this.name + '\'' +
                 ", postAllocate='" + this.postAllocate + '\'' +
@@ -618,7 +624,6 @@ public final class ConnectionPoolConfiguration {
                 ", registerJmx='" + this.registerJmx + '\'' +
                 ", validationDepth='" + this.validationDepth + '\'' +
                 ", validationQuery='" + this.validationQuery + '\'' +
-                ", maxValidationTime='" + this.maxValidationTime + '\'' +
                 '}';
         }
 

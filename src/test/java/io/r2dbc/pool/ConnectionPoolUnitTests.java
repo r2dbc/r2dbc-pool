@@ -73,6 +73,7 @@ import static org.mockito.Mockito.when;
  * @author Mark Paluch
  * @author Tadaya Tsuyukubo
  * @author Petromir Dzhunev
+ * @author Gabriel Calin
  */
 @SuppressWarnings("unchecked")
 final class ConnectionPoolUnitTests {

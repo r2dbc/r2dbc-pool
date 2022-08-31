@@ -57,6 +57,7 @@ import java.util.function.Function;
  * @author Mark Paluch
  * @author Tadaya Tsuyukubo
  * @author Petromir Dzhunev
+ * @author Gabriel Calin
  */
 public class ConnectionPool implements ConnectionFactory, Disposable, Closeable, Wrapped<ConnectionFactory> {
 
@@ -178,13 +179,14 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     private Function<Connection, Mono<Void>> getValidationFunction(ConnectionPoolConfiguration configuration) {
 
-        String timeoutMessage = String.format("Validation timed out after %dms", this.maxValidationTime.toMillis());
+        Function<Connection, Mono<Void>> validation = getValidation(configuration);
 
         if (!this.maxValidationTime.isNegative()) {
-            return getValidation(configuration).andThen(mono -> mono.timeout(this.maxValidationTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e)));
+            String timeoutMessage = String.format("Validation timed out after %dms", this.maxValidationTime.toMillis());
+            return validation.andThen(mono -> mono.timeout(this.maxValidationTime).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e)));
         }
 
-        return getValidation(configuration);
+        return validation;
     }
 
     private Function<Connection, Mono<Void>> getValidation(ConnectionPoolConfiguration configuration) {

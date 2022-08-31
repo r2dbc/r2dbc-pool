@@ -40,6 +40,7 @@ import static org.mockito.Mockito.when;
  * @author Mark Paluch
  * @author Rodolpho S. Couto
  * @author Todd Ginsberg
+ * @author Gabriel Calin
  */
 final class PoolingConnectionFactoryProviderUnitTests {
 
