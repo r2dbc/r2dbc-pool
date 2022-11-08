@@ -53,11 +53,11 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public static final Option<Integer> ACQUIRE_RETRY = Option.valueOf("acquireRetry");
 
     /**
-     * Background eviction interval {@link Option}.
-     *
-     * @since 0.8.7
-     */
-    public static final Option<Integer> BACKGROUND_EVICTION_INTERVAL = Option.valueOf("backgroundEvictionInterval");
+	 * Background eviction interval {@link Option}.
+	 *
+	 * @since 0.8.7
+	 */
+	public static final Option<Duration> BACKGROUND_EVICTION_INTERVAL = Option.valueOf("backgroundEvictionInterval");
 
     /**
      * InitialSize {@link Option}.
