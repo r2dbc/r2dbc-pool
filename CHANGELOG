@@ -1,6 +1,13 @@
 R2DBC Pool Changelog
 =============================
 
+1.0.0.RELEASE
+------------------
+* Validation timeout should invalidate connection #175
+* Should BACKGROUND_EVICTION_INTERVAL be of type Option<Duration> #180
+* `PoolBuilder.sizeBetween` is always executed twice in `ConnectionPool.createConnectionPool`. #181
+* Upgrade to Project Reactor 2022.0.0 #184
+
 1.0.0.RC1
 ------------------
 * Default maxLifeTime value result in immediate eviction of all connections #129
