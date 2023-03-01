@@ -265,7 +265,6 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             return isIdleTimeExceeded || isLifeTimeExceeded;
         };
 
-        int cpuCount = Runtime.getRuntime().availableProcessors();
         PoolBuilder<Connection, PoolConfig<Connection>> builder = PoolBuilder.from(allocator)
             .clock(configuration.getClock())
             .metricsRecorder(metricsRecorder)
@@ -284,8 +283,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         if (!backgroundEvictionInterval.isZero()) {
             if (!backgroundEvictionInterval.isNegative()) {
                 builder.evictInBackground(backgroundEvictionInterval);
-            } else if (!configuration.getMaxIdleTime().isNegative()) {
-                builder.evictInBackground(configuration.getMaxIdleTime());
+            } else if (!maxIdleTime.isNegative()) {
+                builder.evictInBackground(maxIdleTime);
             }
         }
 
