@@ -32,6 +32,7 @@ import org.reactivestreams.Subscription;
 import org.springframework.util.ReflectionUtils;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
 import javax.management.MBeanServer;
@@ -143,9 +144,10 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnNext(it -> creations.incrementAndGet()));
         when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).allocatorSubscribeOn(Schedulers.immediate()).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
+        pool.warmup().as(StepVerifier::create).expectNext(10).verifyComplete();
         pool.create().as(StepVerifier::create).consumeNextWith(actual -> {
 
             assertThat(actual).isInstanceOf(PooledConnection.class);
@@ -188,7 +190,7 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnNext(it -> creations.incrementAndGet()));
         when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).customizer(connectionPoolBuilder -> connectionPoolBuilder.sizeBetween(2, 10)).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).allocatorSubscribeOn(Schedulers.immediate()).customizer(connectionPoolBuilder -> connectionPoolBuilder.sizeBetween(2, 10)).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         pool.create().as(StepVerifier::create).consumeNextWith(actual -> {
@@ -212,7 +214,7 @@ final class ConnectionPoolUnitTests {
         AtomicLong createCounter = new AtomicLong();
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnSubscribe(ignore -> createCounter.incrementAndGet()));
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).allocatorSubscribeOn(Schedulers.immediate()).initialSize(0).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         pool.create().as(StepVerifier::create).assertNext(actual -> {
@@ -237,7 +239,7 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnSubscribe(ignore -> createCounter.incrementAndGet()));
         when(connectionMock.validate(any())).thenReturn(Mono.empty());
 
-        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).build();
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).allocatorSubscribeOn(Schedulers.immediate()).initialSize(0).build();
         ConnectionPool pool = new ConnectionPool(configuration);
 
         pool.create().as(StepVerifier::create).expectNextCount(1).verifyComplete();
@@ -411,6 +413,7 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.create()).thenReturn((Publisher) connectionPublisher);
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .allocatorSubscribeOn(Schedulers.immediate())
             .acquireRetry(0)
             .initialSize(0)
             .maxAcquireTime(Duration.ofMillis(70))
@@ -850,6 +853,7 @@ final class ConnectionPoolUnitTests {
         when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.just(false), Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .allocatorSubscribeOn(Schedulers.immediate())
             .acquireRetry(0)
             .initialSize(0)
             .maxSize(2)
@@ -876,6 +880,7 @@ final class ConnectionPoolUnitTests {
         when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.just(false), Mono.just(false), Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+            .allocatorSubscribeOn(Schedulers.immediate())
             .acquireRetry(1)
             .initialSize(0)
             .maxSize(2)
