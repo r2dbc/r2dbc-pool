@@ -27,6 +27,7 @@ import org.reactivestreams.Publisher;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.pool.InstrumentedPool;
 import reactor.pool.PoolBuilder;
 import reactor.pool.PoolConfig;
@@ -111,39 +112,39 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         Mono<Connection> create = Mono.defer(() -> {
 
             Mono<Connection> mono = this.connectionPool.acquire()
-                .flatMap(ref -> {
+                    .flatMap(ref -> {
 
-                    if (logger.isDebugEnabled()) {
-                        logger.debug("Obtaining new connection from the pool");
-                    }
+                        if (logger.isDebugEnabled()) {
+                            logger.debug("Obtaining new connection from the pool");
+                        }
 
-                    Mono<Void> prepare = null;
-                    if (ref.poolable() instanceof Lifecycle) {
-                        prepare = Mono.from(((Lifecycle) ref.poolable()).postAllocate());
-                    }
+                        Mono<Void> prepare = null;
+                        if (ref.poolable() instanceof Lifecycle) {
+                            prepare = Mono.from(((Lifecycle) ref.poolable()).postAllocate());
+                        }
 
-                    if (configuration.getPostAllocate() != null) {
+                        if (configuration.getPostAllocate() != null) {
 
-                        Mono<Void> postAllocate = Mono.defer(() -> Mono.from(configuration.getPostAllocate().apply(ref.poolable())));
-                        prepare = prepare == null ? postAllocate : prepare.then(postAllocate);
-                    }
+                            Mono<Void> postAllocate = Mono.defer(() -> Mono.from(configuration.getPostAllocate().apply(ref.poolable())));
+                            prepare = prepare == null ? postAllocate : prepare.then(postAllocate);
+                        }
 
-                    PooledConnection connection = new PooledConnection(ref, this.preRelease);
-                    Mono<Connection> conn;
-                    if (prepare == null) {
-                        conn = getValidConnection(allocateValidation, connection);
-                    } else {
-                        conn = prepare.then(getValidConnection(allocateValidation, connection));
-                    }
+                        PooledConnection connection = new PooledConnection(ref, this.preRelease);
+                        Mono<Connection> conn;
+                        if (prepare == null) {
+                            conn = getValidConnection(allocateValidation, connection);
+                        } else {
+                            conn = prepare.then(getValidConnection(allocateValidation, connection));
+                        }
 
-                    conn = conn.onErrorResume(throwable -> ref.invalidate().then(Mono.error(throwable)));
+                        conn = conn.onErrorResume(throwable -> ref.invalidate().then(Mono.error(throwable)));
 
-                    return Operators.discardOnCancel(conn, () -> {
-                        ref.release().subscribe();
-                        return false;
-                    });
-                })
-                .name(acqName);
+                        return Operators.discardOnCancel(conn, () -> {
+                            ref.release().subscribe();
+                            return false;
+                        });
+                    })
+                    .name(acqName);
 
             if (!this.maxAcquireTime.isNegative()) {
 
@@ -161,7 +162,6 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                             disposeConnection.accept(dropped);
                             it.accept(dropped);
                         };
-
                     }).orElse(disposeConnection);
 
                     return context.put(HOOK_ON_DROPPED, onNextDropped);
@@ -170,7 +170,6 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             return mono;
         });
         this.create = configuration.getAcquireRetry() > 0 ? create.retry(configuration.getAcquireRetry()) : create;
-
     }
 
     private Mono<Connection> getValidConnection(Function<Connection, Mono<Void>> allocateValidation, Connection connection) {
@@ -227,6 +226,11 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         // set timeout for create connection
         Mono<Connection> allocator = Mono.<Connection>from(factory.create()).name("Connection Allocation");
+
+        if (configuration.getAllocatorSubscribeOn() == null) {
+            allocator = allocator.subscribeOn(Schedulers.single());
+        }
+
         if (!maxCreateConnectionTime.isNegative()) {
 
             Consumer<Object> disposeConnection = dropped -> {
@@ -243,7 +247,6 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                         disposeConnection.accept(dropped);
                         it.accept(dropped);
                     };
-
                 }).orElse(disposeConnection);
 
                 return context.put(HOOK_ON_DROPPED, onNextDropped);
@@ -267,11 +270,11 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         int cpuCount = Runtime.getRuntime().availableProcessors();
         PoolBuilder<Connection, PoolConfig<Connection>> builder = PoolBuilder.from(allocator)
-            .clock(configuration.getClock())
-            .metricsRecorder(metricsRecorder)
-            .evictionPredicate(evictionPredicate)
-            .destroyHandler(Connection::close)
-            .idleResourceReuseMruOrder(); // MRU to support eviction of idle
+                .clock(configuration.getClock())
+                .metricsRecorder(metricsRecorder)
+                .evictionPredicate(evictionPredicate)
+                .destroyHandler(Connection::close)
+                .idleResourceReuseMruOrder(); // MRU to support eviction of idle
 
         if (maxSize == -1 || initialSize > 0) {
             builder.sizeBetween(Math.max(configuration.getMinIdle(), initialSize), maxSize == -1 ? Integer.MAX_VALUE : maxSize);
@@ -325,25 +328,25 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         List<Throwable> errors = new ArrayList<>();
         return Flux.fromIterable(this.destroyHandlers)
-            .flatMap(Mono::fromRunnable)
-            .concatWith(this.connectionPool.disposeLater())
-            .onErrorContinue((throwable, o) -> {
-                errors.add(throwable);
-            })
-            .then(Mono.defer(() -> {
-                if (errors.isEmpty()) {
-                    return Mono.empty();
-                }
+                .flatMap(Mono::fromRunnable)
+                .concatWith(this.connectionPool.disposeLater())
+                .onErrorContinue((throwable, o) -> {
+                    errors.add(throwable);
+                })
+                .then(Mono.defer(() -> {
+                    if (errors.isEmpty()) {
+                        return Mono.empty();
+                    }
 
-                Throwable rootError = errors.get(0);
-                if (errors.size() == 1) {
+                    Throwable rootError = errors.get(0);
+                    if (errors.size() == 1) {
+                        return Mono.error(rootError);
+                    }
+
+                    errors.subList(1, errors.size()).forEach(rootError::addSuppressed);
+
                     return Mono.error(rootError);
-                }
-
-                errors.subList(1, errors.size()).forEach(rootError::addSuppressed);
-
-                return Mono.error(rootError);
-            }));
+                }));
     }
 
     @Override
@@ -451,7 +454,6 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         public int getMaxPendingAcquireSize() {
             return this.delegate.getMaxPendingAcquireSize();
         }
-
     }
 
     private class ConnectionPoolMXBeanImpl implements ConnectionPoolMXBean {
@@ -491,7 +493,5 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         public int getMaxPendingAcquireSize() {
             return this.poolMetrics.getMaxPendingAcquireSize();
         }
-
     }
-
 }

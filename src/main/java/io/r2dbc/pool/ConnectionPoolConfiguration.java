@@ -22,6 +22,8 @@ import io.r2dbc.spi.Lifecycle;
 import io.r2dbc.spi.ValidationDepth;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.pool.PoolBuilder;
 import reactor.pool.PoolConfig;
 import reactor.pool.PoolMetricsRecorder;
@@ -49,6 +51,9 @@ public final class ConnectionPoolConfiguration {
      * Constant indicating that timeout should not apply.
      */
     public static final Duration NO_TIMEOUT = Duration.ofMillis(-1);
+
+    @Nullable
+    private final Scheduler allocatorSubscribeOn;
 
     private final int acquireRetry;
 
@@ -94,12 +99,13 @@ public final class ConnectionPoolConfiguration {
     @Nullable
     private final String validationQuery;
 
-    private ConnectionPoolConfiguration(int acquireRetry, @Nullable Duration backgroundEvictionInterval, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ?
-        extends PoolConfig<? extends Connection>>> customizer, int initialSize, int maxSize, int minIdle, Duration maxAcquireTime, Duration maxCreateConnectionTime, Duration maxIdleTime,
+    private ConnectionPoolConfiguration(@Nullable Scheduler allocatorSubscribeOn, int acquireRetry, @Nullable Duration backgroundEvictionInterval, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ?
+            extends PoolConfig<? extends Connection>>> customizer, int initialSize, int maxSize, int minIdle, Duration maxAcquireTime, Duration maxCreateConnectionTime, Duration maxIdleTime,
                                         Duration maxLifeTime, Duration maxValidationTime, PoolMetricsRecorder metricsRecorder, @Nullable String name,
                                         @Nullable Function<? super Connection, ? extends Publisher<Void>> postAllocate,
                                         @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, boolean registerJmx, ValidationDepth validationDepth,
                                         @Nullable String validationQuery) {
+        this.allocatorSubscribeOn = allocatorSubscribeOn;
         this.acquireRetry = acquireRetry;
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
         this.clock = clock;
@@ -140,6 +146,11 @@ public final class ConnectionPoolConfiguration {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    @Nullable
+    Scheduler getAllocatorSubscribeOn() {
+        return this.allocatorSubscribeOn;
     }
 
     int getAcquireRetry() {
@@ -235,6 +246,8 @@ public final class ConnectionPoolConfiguration {
 
         private static final int DEFAULT_SIZE = 10;
 
+        private @Nullable Scheduler allocatorSubscribeOn;
+
         private int acquireRetry = 1;
 
         private Duration backgroundEvictionInterval = NO_TIMEOUT;
@@ -281,6 +294,21 @@ public final class ConnectionPoolConfiguration {
         private ValidationDepth validationDepth = ValidationDepth.LOCAL;
 
         private Builder() {
+        }
+
+        /**
+         * Configure {@link Scheduler} to use for allocation. Defaults to {@link Schedulers#single()}.
+         * Configuring the scheduler can be relevant to coordinate thread co-location.
+         *
+         * @param scheduler the scheduler to use.
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code scheduler} is null.
+         * @see Schedulers#single()
+         * @since 1.0.1
+         */
+        public Builder allocatorSubscribeOn(Scheduler scheduler) {
+            this.allocatorSubscribeOn = Assert.requireNonNull(scheduler, "scheduler must not be null");
+            return this;
         }
 
         /**
@@ -564,11 +592,11 @@ public final class ConnectionPoolConfiguration {
         public ConnectionPoolConfiguration build() {
             applyDefaults();
             validate();
-            return new ConnectionPoolConfiguration(this.acquireRetry, this.backgroundEvictionInterval, this.connectionFactory, this.clock, this.customizer, this.initialSize, this.maxSize,
-                this.minIdle,
-                this.maxAcquireTime, this.maxCreateConnectionTime, this.maxIdleTime, this.maxLifeTime, this.maxValidationTime, this.metricsRecorder, this.name, this.postAllocate, this.preRelease,
-                this.registerJmx,
-                this.validationDepth, this.validationQuery
+            return new ConnectionPoolConfiguration(this.allocatorSubscribeOn, this.acquireRetry, this.backgroundEvictionInterval, this.connectionFactory,
+                    this.clock, this.customizer, this.initialSize, this.maxSize, this.minIdle,
+                    this.maxAcquireTime, this.maxCreateConnectionTime, this.maxIdleTime, this.maxLifeTime, this.maxValidationTime,
+                    this.metricsRecorder, this.name, this.postAllocate, this.preRelease, this.registerJmx,
+                    this.validationDepth, this.validationQuery
             );
         }
 
@@ -605,26 +633,27 @@ public final class ConnectionPoolConfiguration {
         @Override
         public String toString() {
             return "Builder{" +
-                "acquireRetry='" + this.acquireRetry + '\'' +
-                ", backgroundEvictionInterval='" + this.backgroundEvictionInterval + '\'' +
-                ", connectionFactory='" + this.connectionFactory + '\'' +
-                ", clock='" + this.clock + '\'' +
-                ", initialSize='" + this.initialSize + '\'' +
-                ", minIdle='" + this.minIdle + '\'' +
-                ", maxSize='" + this.maxSize + '\'' +
-                ", maxAcquireTime='" + this.maxAcquireTime + '\'' +
-                ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +
-                ", maxIdleTime='" + this.maxIdleTime + '\'' +
-                ", maxLifeTime='" + this.maxLifeTime + '\'' +
-                ", maxValidationTime='" + this.maxValidationTime + '\'' +
-                ", metricsRecorder='" + this.metricsRecorder + '\'' +
-                ", name='" + this.name + '\'' +
-                ", postAllocate='" + this.postAllocate + '\'' +
-                ", preRelease='" + this.preRelease + '\'' +
-                ", registerJmx='" + this.registerJmx + '\'' +
-                ", validationDepth='" + this.validationDepth + '\'' +
-                ", validationQuery='" + this.validationQuery + '\'' +
-                '}';
+                    "allocatorSubscribeOn='" + this.allocatorSubscribeOn + '\'' +
+                    ", acquireRetry='" + this.acquireRetry + '\'' +
+                    ", backgroundEvictionInterval='" + this.backgroundEvictionInterval + '\'' +
+                    ", connectionFactory='" + this.connectionFactory + '\'' +
+                    ", clock='" + this.clock + '\'' +
+                    ", initialSize='" + this.initialSize + '\'' +
+                    ", minIdle='" + this.minIdle + '\'' +
+                    ", maxSize='" + this.maxSize + '\'' +
+                    ", maxAcquireTime='" + this.maxAcquireTime + '\'' +
+                    ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +
+                    ", maxIdleTime='" + this.maxIdleTime + '\'' +
+                    ", maxLifeTime='" + this.maxLifeTime + '\'' +
+                    ", maxValidationTime='" + this.maxValidationTime + '\'' +
+                    ", metricsRecorder='" + this.metricsRecorder + '\'' +
+                    ", name='" + this.name + '\'' +
+                    ", postAllocate='" + this.postAllocate + '\'' +
+                    ", preRelease='" + this.preRelease + '\'' +
+                    ", registerJmx='" + this.registerJmx + '\'' +
+                    ", validationDepth='" + this.validationDepth + '\'' +
+                    ", validationQuery='" + this.validationQuery + '\'' +
+                    '}';
         }
 
         private static Duration applyDefault(@Nullable Duration duration) {
