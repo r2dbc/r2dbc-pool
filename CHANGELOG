@@ -1,6 +1,12 @@
 R2DBC Pool Changelog
 =============================
 
+1.0.1.RELEASE
+------------------
+* Remove unused code and reuse predefined variable #188
+* Use `Schedulers.single()` to avoid accidental thread co-location #190
+* Upgrade to Reactor 2022.0.9 #193
+
 1.0.0.RELEASE
 ------------------
 * Validation timeout should invalidate connection #175
