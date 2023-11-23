@@ -368,7 +368,7 @@ public final class ConnectionPoolConfiguration {
          *
          * @param initialSize the initial pool size, must be equal or greater than zero.
          * @return this {@link Builder}
-         * @throws IllegalArgumentException if {@code maxSize} is negative or zero.
+         * @throws IllegalArgumentException if {@code initialSize} is negative or zero.
          */
         public Builder initialSize(int initialSize) {
             if (initialSize < 0) {
