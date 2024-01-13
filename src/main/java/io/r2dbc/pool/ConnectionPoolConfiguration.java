@@ -52,6 +52,11 @@ public final class ConnectionPoolConfiguration {
      */
     public static final Duration NO_TIMEOUT = Duration.ofMillis(-1);
 
+    /**
+     * Constant indicating the default parallelism used during connection pool warmup.
+     */
+    public static final int DEFAULT_WARMUP_PARALLELISM = 1;
+
     @Nullable
     private final Scheduler allocatorSubscribeOn;
 
@@ -99,12 +104,14 @@ public final class ConnectionPoolConfiguration {
     @Nullable
     private final String validationQuery;
 
+    private final int warmupParallelism;
+
     private ConnectionPoolConfiguration(@Nullable Scheduler allocatorSubscribeOn, int acquireRetry, @Nullable Duration backgroundEvictionInterval, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ?
             extends PoolConfig<? extends Connection>>> customizer, int initialSize, int maxSize, int minIdle, Duration maxAcquireTime, Duration maxCreateConnectionTime, Duration maxIdleTime,
                                         Duration maxLifeTime, Duration maxValidationTime, PoolMetricsRecorder metricsRecorder, @Nullable String name,
                                         @Nullable Function<? super Connection, ? extends Publisher<Void>> postAllocate,
                                         @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, boolean registerJmx, ValidationDepth validationDepth,
-                                        @Nullable String validationQuery) {
+                                        @Nullable String validationQuery, int warmupParallelism) {
         this.allocatorSubscribeOn = allocatorSubscribeOn;
         this.acquireRetry = acquireRetry;
         this.connectionFactory = Assert.requireNonNull(connectionFactory, "ConnectionFactory must not be null");
@@ -126,6 +133,7 @@ public final class ConnectionPoolConfiguration {
         this.validationDepth = validationDepth;
         this.validationQuery = validationQuery;
         this.backgroundEvictionInterval = backgroundEvictionInterval;
+        this.warmupParallelism = warmupParallelism;
     }
 
     /**
@@ -237,6 +245,10 @@ public final class ConnectionPoolConfiguration {
         return this.validationQuery;
     }
 
+    int getWarmupParallelism() {
+        return this.warmupParallelism;
+    }
+
     /**
      * A builder for {@link ConnectionPoolConfiguration} instances.
      * <p>
@@ -292,6 +304,8 @@ public final class ConnectionPoolConfiguration {
         private String validationQuery;
 
         private ValidationDepth validationDepth = ValidationDepth.LOCAL;
+
+        private int warmupParallelism = DEFAULT_WARMUP_PARALLELISM;
 
         private Builder() {
         }
@@ -584,6 +598,23 @@ public final class ConnectionPoolConfiguration {
         }
 
         /**
+         * Configure the concurrency level used when the allocator is subscribed to during the warmup phase.
+         *
+         * @param warmupParallelism Specifies the concurrency level used when the allocator is subscribed to during the warmup phase, if any.
+         * During warmup, resources that can be pre-allocated will be created eagerly, but at most {@code warmupParallelism} resources are
+         * subscribed to at the same time.
+         * @return this {@link Builder}
+         * @throws IllegalArgumentException if {@code warmupParallelism} is negative
+         */
+        public Builder warmupParallelism(int warmupParallelism) {
+            if (warmupParallelism < 0) {
+                throw new IllegalArgumentException("warmupParallelism must not be negative");
+            }
+            this.warmupParallelism = warmupParallelism;
+            return this;
+        }
+
+        /**
          * Returns a configured {@link ConnectionPoolConfiguration}.
          *
          * @return a configured {@link ConnectionPoolConfiguration}
@@ -596,7 +627,7 @@ public final class ConnectionPoolConfiguration {
                     this.clock, this.customizer, this.initialSize, this.maxSize, this.minIdle,
                     this.maxAcquireTime, this.maxCreateConnectionTime, this.maxIdleTime, this.maxLifeTime, this.maxValidationTime,
                     this.metricsRecorder, this.name, this.postAllocate, this.preRelease, this.registerJmx,
-                    this.validationDepth, this.validationQuery
+                    this.validationDepth, this.validationQuery, this.warmupParallelism
             );
         }
 
