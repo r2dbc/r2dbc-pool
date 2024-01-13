@@ -49,6 +49,7 @@ final class ConnectionPoolConfigurationUnitTests {
             .maxSize(20)
             .name("bar")
             .registerJmx(true)
+            .warmupParallelism(99)
             .build();
 
         assertThat(configuration)
@@ -62,7 +63,8 @@ final class ConnectionPoolConfigurationUnitTests {
             .hasFieldOrPropertyWithValue("initialSize", 2)
             .hasFieldOrPropertyWithValue("maxSize", 20)
             .hasFieldOrPropertyWithValue("name", "bar")
-            .hasFieldOrPropertyWithValue("registerJmx", true);
+            .hasFieldOrPropertyWithValue("registerJmx", true)
+            .hasFieldOrPropertyWithValue("warmupParallelism", 99);
     }
 
     @Test
@@ -82,7 +84,8 @@ final class ConnectionPoolConfigurationUnitTests {
             .hasFieldOrPropertyWithValue("maxValidationTime", Duration.ofMillis(-1))
             .hasFieldOrPropertyWithValue("initialSize", 10)
             .hasFieldOrPropertyWithValue("maxSize", 10)
-            .hasFieldOrPropertyWithValue("registerJmx", false);
+            .hasFieldOrPropertyWithValue("registerJmx", false)
+            .hasFieldOrPropertyWithValue("warmupParallelism", 1);
     }
 
     @Test

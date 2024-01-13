@@ -72,6 +72,7 @@ Mono<Object> resultMono = Mono.usingWhen(pooledConnectionFactory.create(),
 | `registerJmx`                | Whether to register the pool to JMX.
 | `validationDepth`            | Validation depth used to validate an R2DBC connection. Defaults to `LOCAL`.
 | `validationQuery`            | Query that will be executed just before a connection is given to you from the pool to validate that the connection to the database is still alive.
+| `warmupParallelism`          | The concurrency level used when the allocator is subscribed to during the warmup phase. Default to `1`.
 
 All other properties are driver-specific.
 

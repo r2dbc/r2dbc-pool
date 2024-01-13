@@ -149,6 +149,11 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
      */
     public static final Option<ValidationDepth> VALIDATION_DEPTH = Option.valueOf("validationDepth");
 
+    /**
+     * WarmupParallelism {@link Option}.
+     */
+    public static final Option<Integer> WARMUP_PARALLELISM = Option.valueOf("warmupParallelism");
+
     private static final String COLON = ":";
 
     /**
@@ -210,6 +215,7 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         mapper.from(REGISTER_JMX).as(OptionMapper::toBoolean).to(builder::registerJmx);
         mapper.fromExact(VALIDATION_QUERY).to(builder::validationQuery);
         mapper.from(VALIDATION_DEPTH).as(validationDepth -> OptionMapper.toEnum(validationDepth, ValidationDepth.class)).to(builder::validationDepth);
+        mapper.from(WARMUP_PARALLELISM).as(OptionMapper::toInteger).to(builder::warmupParallelism);
 
         return builder.build();
     }
