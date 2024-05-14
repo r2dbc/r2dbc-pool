@@ -31,6 +31,7 @@ import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import org.springframework.util.ReflectionUtils;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
@@ -47,8 +48,10 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -60,8 +63,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import static java.lang.String.format;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -1118,6 +1123,38 @@ final class ConnectionPoolUnitTests {
         subRef.get().onComplete();
 
         assertThat(closed).isTrue();
+    }
+    
+    @Test
+    void shouldNotDuplicateObjectsDuringCancel() {
+        Set<Connection> uniqueConnections = ConcurrentHashMap.newKeySet();
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+
+        when(connectionFactoryMock.create()).thenReturn((Publisher)Mono.fromCallable(() -> {
+            ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
+            when(connectionMock.validate(any())).thenReturn(Mono.just(true));
+            when(connectionMock.postAllocate()).thenReturn(Mono.empty());
+            when(connectionMock.preRelease()).thenReturn(Mono.<Void>fromRunnable(() -> 
+                    uniqueConnections.remove(connectionMock))
+              );
+            return connectionMock;
+        }));
+        
+        ConnectionPool pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactoryMock)
+                .build());
+        CompletableFuture<Long> future = Flux.range(0, 32)
+            .flatMap(i -> Mono.fromCallable(() -> true)
+                .then(Mono.defer(() -> Mono.usingWhen(Flux.defer(pool::create), 
+                    c -> {
+                        assertFalse(!uniqueConnections.add(((PooledConnection)c).unwrap()), 
+                            "duplicate connections returned from pool");
+                        return Mono.delay(Duration.ofMillis(1));
+                    }, 
+                    Connection::close))))
+            .ignoreElements()
+            .toFuture();
+
+        assertThatNoException().isThrownBy(future::join);
     }
 
     interface ConnectionWithLifecycle extends Connection, Lifecycle {
