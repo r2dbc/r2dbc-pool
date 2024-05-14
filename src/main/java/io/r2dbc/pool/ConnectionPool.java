@@ -48,6 +48,7 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -110,7 +111,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         Function<Connection, Mono<Void>> allocateValidation = getValidationFunction(configuration);
 
         Mono<Connection> create = Mono.defer(() -> {
-
+            AtomicBoolean emitting = new AtomicBoolean(true);
             Mono<Connection> mono = this.connectionPool.acquire()
                     .flatMap(ref -> {
 
@@ -140,7 +141,10 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                         conn = conn.onErrorResume(throwable -> ref.invalidate().then(Mono.error(throwable)));
 
                         return Operators.discardOnCancel(conn, () -> {
-                            ref.release().subscribe();
+                            if (emitting.compareAndSet(true, false)) {
+                                logger.debug("Discarding pooled reference as creation was disposed");
+                                ref.release().subscribe();
+                            }
                             return false;
                         });
                     })
@@ -167,7 +171,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                     return context.put(HOOK_ON_DROPPED, onNextDropped);
                 }).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e));
             }
-            return mono;
+            return mono
+                .doOnTerminate(() -> emitting.compareAndSet(true, false));
         });
         this.create = configuration.getAcquireRetry() > 0 ? create.retry(configuration.getAcquireRetry()) : create;
     }
