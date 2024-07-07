@@ -89,7 +89,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
      * @param configuration the configuration to use for building the connection pool.
      * @throws IllegalArgumentException if {@code configuration} is {@code null}
      */
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "this-escape"})
     public ConnectionPool(ConnectionPoolConfiguration configuration) {
         this.connectionPool = createConnectionPool(Assert.requireNonNull(configuration, "ConnectionPoolConfiguration must not be null"));
         this.factory = configuration.getConnectionFactory();
@@ -99,9 +99,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         this.preRelease = configuration.getPreRelease();
 
         if (configuration.isRegisterJmx()) {
-            getMetrics().ifPresent(poolMetrics -> {
-                registerToJmx(poolMetrics, configuration.getName());
-            });
+            getMetrics().ifPresent(metrics -> registerToJmx(metrics, configuration.getName()));
         }
 
         String acqName = String.format("Connection acquisition from [%s]", configuration.getConnectionFactory());
@@ -155,7 +153,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                 };
 
                 mono = mono.timeout(this.maxAcquireTime).contextWrite(context -> {
-
+                    @SuppressWarnings("unchecked")
                     Consumer<Object> onNextDropped = context.getOrEmpty(HOOK_ON_DROPPED).map(it -> (Consumer<Object>) it).map(it -> {
 
                         return (Consumer<Object>) dropped -> {
