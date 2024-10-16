@@ -16,23 +16,14 @@
 
 package io.r2dbc.pool;
 
-import io.r2dbc.spi.Closeable;
-import io.r2dbc.spi.Connection;
-import io.r2dbc.spi.ConnectionFactory;
-import io.r2dbc.spi.ConnectionFactoryMetadata;
-import io.r2dbc.spi.Lifecycle;
-import io.r2dbc.spi.R2dbcTimeoutException;
-import io.r2dbc.spi.Wrapped;
+import io.r2dbc.spi.*;
 import org.reactivestreams.Publisher;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.pool.InstrumentedPool;
-import reactor.pool.PoolBuilder;
-import reactor.pool.PoolConfig;
-import reactor.pool.PoolMetricsRecorder;
-import reactor.pool.PooledRefMetadata;
+import reactor.pool.*;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
@@ -47,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
@@ -114,30 +106,33 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             Mono<Connection> mono = this.connectionPool.acquire()
                     .flatMap(ref -> {
 
-                        if (logger.isDebugEnabled()) {
-                            logger.debug("Obtaining new connection from the pool");
-                        }
-
-                        Mono<Void> prepare = null;
-                        if (ref.poolable() instanceof Lifecycle) {
-                            prepare = Mono.from(((Lifecycle) ref.poolable()).postAllocate());
-                        }
-
-                        if (configuration.getPostAllocate() != null) {
-
-                            Mono<Void> postAllocate = Mono.defer(() -> Mono.from(configuration.getPostAllocate().apply(ref.poolable())));
-                            prepare = prepare == null ? postAllocate : prepare.then(postAllocate);
-                        }
-
-                        PooledConnection connection = new PooledConnection(ref, this.preRelease);
+                        Connection connection = ref.poolable();
+                        Scheduler scheduler = null;
+                        Executor executor = null;
                         Mono<Connection> conn;
-                        if (prepare == null) {
-                            conn = getValidConnection(allocateValidation, connection);
-                        } else {
-                            conn = prepare.then(getValidConnection(allocateValidation, connection));
+
+                        if (connection instanceof Wrapped<?>) {
+
+                            Wrapped<?> wrapped = (Wrapped<?>) connection;
+
+                            scheduler = wrapped.unwrap(Scheduler.class);
+
+                            if (scheduler == null) {
+                                executor = wrapped.unwrap(Executor.class);
+                            }
+
+                            if (executor != null) {
+                                scheduler = Schedulers.fromExecutor(executor);
+                            }
                         }
 
-                        conn = conn.onErrorResume(throwable -> ref.invalidate().then(Mono.error(throwable)));
+                        if (scheduler != null) {
+                            conn = Mono.just(connection).publishOn(scheduler).flatMap(it -> {
+                                return prepareConnection(configuration, ref, connection, allocateValidation);
+                            });
+                        } else {
+                            conn = prepareConnection(configuration, ref, connection, allocateValidation);
+                        }
 
                         return Operators.discardOnCancel(conn, () -> {
                             ref.release().subscribe();
@@ -170,6 +165,37 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             return mono;
         });
         this.create = configuration.getAcquireRetry() > 0 ? create.retry(configuration.getAcquireRetry()) : create;
+    }
+
+    private Mono<Connection> prepareConnection(ConnectionPoolConfiguration configuration, PooledRef<Connection> ref, Connection connection, Function<Connection, Mono<Void>> allocateValidation) {
+
+        Mono<Void> prepare = null;
+
+        if (logger.isDebugEnabled()) {
+            logger.debug("Obtaining new connection from the pool");
+        }
+
+
+        if (connection instanceof Lifecycle) {
+            prepare = Mono.from(((Lifecycle) connection).postAllocate());
+        }
+
+        if (configuration.getPostAllocate() != null) {
+
+            Mono<Void> postAllocate = Mono.defer(() -> Mono.from(configuration.getPostAllocate().apply(connection)));
+            prepare = prepare == null ? postAllocate : prepare.then(postAllocate);
+        }
+
+        PooledConnection pooledConnection = new PooledConnection(ref, this.preRelease);
+        Mono<Connection> conn;
+        if (prepare == null) {
+            conn = getValidConnection(allocateValidation, pooledConnection);
+        } else {
+            conn = prepare.then(getValidConnection(allocateValidation, pooledConnection));
+        }
+
+        conn = conn.onErrorResume(throwable -> ref.invalidate().then(Mono.error(throwable)));
+        return conn;
     }
 
     private Mono<Connection> getValidConnection(Function<Connection, Mono<Void>> allocateValidation, Connection connection) {
