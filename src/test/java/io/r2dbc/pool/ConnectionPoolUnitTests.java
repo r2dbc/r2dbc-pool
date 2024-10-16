@@ -16,13 +16,7 @@
 
 package io.r2dbc.pool;
 
-import io.r2dbc.spi.Connection;
-import io.r2dbc.spi.ConnectionFactory;
-import io.r2dbc.spi.ConnectionFactoryMetadata;
-import io.r2dbc.spi.Lifecycle;
-import io.r2dbc.spi.R2dbcTimeoutException;
-import io.r2dbc.spi.ValidationDepth;
-import io.r2dbc.spi.Wrapped;
+import io.r2dbc.spi.*;
 import io.r2dbc.spi.test.MockConnection;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +26,7 @@ import org.reactivestreams.Subscription;
 import org.springframework.util.ReflectionUtils;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
@@ -39,34 +34,21 @@ import javax.management.MBeanServer;
 import javax.management.ObjectName;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.Field;
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
+import java.time.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static java.lang.String.format;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for {@link ConnectionPool}.
@@ -127,7 +109,33 @@ final class ConnectionPoolUnitTests {
 
             assertThat(actual).isInstanceOf(PooledConnection.class);
             assertThat(((Wrapped) actual).unwrap()).isSameAs(connectionMock);
+            assertThat(Thread.currentThread().getName()).startsWith("single-");
 
+        }).verifyComplete();
+
+        verify(connectionFactoryMock).create();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldCreateConnectionAndeOffloadPreparation() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class, withSettings().extraInterfaces(Wrapped.class));
+        Wrapped<?> wrapped = (Wrapped<?>) connectionMock;
+
+        when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
+        when(wrapped.unwrap(Scheduler.class)).thenReturn(Schedulers.parallel());
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock).build();
+        ConnectionPool pool = new ConnectionPool(configuration);
+
+        pool.create().as(StepVerifier::create).consumeNextWith(actual -> {
+
+            assertThat(actual).isInstanceOf(PooledConnection.class);
+            assertThat(((Wrapped) actual).unwrap()).isSameAs(connectionMock);
+            assertThat(Thread.currentThread().getName()).startsWith("parallel-");
         }).verifyComplete();
 
         verify(connectionFactoryMock).create();
