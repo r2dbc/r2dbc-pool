@@ -1,6 +1,10 @@
 R2DBC Pool Changelog
 =============================
 
+1.0.2.RELEASE
+------------------
+* Explore acquisition scheduler offloading #217
+
 1.0.1.RELEASE
 ------------------
 * Remove unused code and reuse predefined variable #188
