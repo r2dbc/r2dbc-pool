@@ -366,6 +366,7 @@
                                 <nexusUrl>https://oss.sonatype.org/</nexusUrl>
                                 <autoReleaseAfterClose>true</autoReleaseAfterClose>
                                 <keepStagingRepositoryOnFailure>true</keepStagingRepositoryOnFailure>
+                                <stagingProgressTimeoutMinutes>10</stagingProgressTimeoutMinutes>
                             </configuration>
                         </plugin>
                     </plugins>
