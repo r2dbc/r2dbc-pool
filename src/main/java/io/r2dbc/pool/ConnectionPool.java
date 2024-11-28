@@ -108,22 +108,10 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
                         Connection connection = ref.poolable();
                         Scheduler scheduler = null;
-                        Executor executor = null;
                         Mono<Connection> conn;
 
                         if (connection instanceof Wrapped<?>) {
-
-                            Wrapped<?> wrapped = (Wrapped<?>) connection;
-
-                            scheduler = wrapped.unwrap(Scheduler.class);
-
-                            if (scheduler == null) {
-                                executor = wrapped.unwrap(Executor.class);
-                            }
-
-                            if (executor != null) {
-                                scheduler = Schedulers.fromExecutor(executor);
-                            }
+                            scheduler = findScheduler((Wrapped<?>) connection);
                         }
 
                         if (scheduler != null) {
@@ -165,6 +153,27 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             return mono;
         });
         this.create = configuration.getAcquireRetry() > 0 ? create.retry(configuration.getAcquireRetry()) : create;
+    }
+
+    @Nullable
+    @SuppressWarnings("DataFlowIssue")
+    private static Scheduler findScheduler(Wrapped<?> connection) {
+
+        Object unwrapped = connection.unwrap(Scheduler.class);
+
+        if (!(unwrapped instanceof Scheduler)) {
+            unwrapped = connection.unwrap(Executor.class);
+        }
+
+        if (unwrapped instanceof Executor) {
+            unwrapped = Schedulers.fromExecutor((Executor) unwrapped);
+        }
+
+        if (unwrapped instanceof Scheduler) {
+            return (Scheduler) unwrapped;
+        }
+
+        return null;
     }
 
     private Mono<Connection> prepareConnection(ConnectionPoolConfiguration configuration, PooledRef<Connection> ref, Connection connection, Function<Connection, Mono<Void>> allocateValidation) {
