@@ -311,9 +311,15 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                 .idleResourceReuseMruOrder(); // MRU to support eviction of idle
 
         if (maxSize == -1 || initialSize > 0) {
-            builder.sizeBetween(Math.max(configuration.getMinIdle(), initialSize), maxSize == -1 ? Integer.MAX_VALUE : maxSize);
+            builder.sizeBetween(
+                Math.max(configuration.getMinIdle(), initialSize),
+                maxSize == -1 ? Integer.MAX_VALUE : maxSize,
+                configuration.getWarmupParallelism());
         } else {
-            builder.sizeBetween(Math.max(configuration.getMinIdle(), initialSize), maxSize);
+            builder.sizeBetween(
+                Math.max(configuration.getMinIdle(), initialSize),
+                maxSize,
+                configuration.getWarmupParallelism());
         }
 
         Duration backgroundEvictionInterval = configuration.getBackgroundEvictionInterval();
