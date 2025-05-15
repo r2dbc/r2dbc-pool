@@ -43,6 +43,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import reactor.util.retry.Retry;
 
 /**
  * Reactive Relational Database Connection Pool implementation.
@@ -150,6 +151,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                     return context.put(HOOK_ON_DROPPED, onNextDropped);
                 }).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e));
             }
+            // retry on validation error, up to a maximum of until all connections are invalidated
+            mono = mono.retryWhen(Retry.max(configuration.getMaxSize()).filter(R2dbcNonTransientResourceException.class::isInstance));
             return mono;
         });
         this.create = configuration.getAcquireRetry() > 0 ? create.retry(configuration.getAcquireRetry()) : create;

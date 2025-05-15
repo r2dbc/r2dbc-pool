@@ -909,7 +909,7 @@ final class ConnectionPoolUnitTests {
 
         when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock).doOnSubscribe(ignore -> subscriptions.incrementAndGet()));
         when(connectionMock.close()).thenReturn(Mono.empty());
-        // first broken, retry broken, last success
+        // first broken, last success
         when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.just(false), Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
@@ -921,14 +921,13 @@ final class ConnectionPoolUnitTests {
 
         ConnectionPool pool = new ConnectionPool(configuration);
 
-        pool.create().flatMapMany(Connection::close).as(StepVerifier::create).verifyError();
         pool.create().flatMapMany(Connection::close).as(StepVerifier::create).verifyComplete();
 
         assertThat(subscriptions).hasValue(2);
     }
 
     @Test
-    void shouldDropConnectionOnFailedValidationWithRetry() {
+    void shouldDropConnectionOnTimeoutExceptionWithRetry() {
 
         AtomicInteger subscriptions = new AtomicInteger();
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
@@ -937,7 +936,7 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock).doOnSubscribe(ignore -> subscriptions.incrementAndGet()));
         when(connectionMock.close()).thenReturn(Mono.empty());
         // first broken, retry broken, last success
-        when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.just(false), Mono.just(false), Mono.empty());
+        when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.error(TimeoutException::new), Mono.error(TimeoutException::new), Mono.empty());
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
                 .allocatorSubscribeOn(Schedulers.immediate())
