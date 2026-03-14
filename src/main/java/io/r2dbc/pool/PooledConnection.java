@@ -114,7 +114,7 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     @Override
     public Mono<Void> commitTransaction() {
         assertNotClosed();
-        return Mono.from(this.connection.commitTransaction()).doOnSubscribe(ignore -> this.inTransaction = false);
+        return Mono.from(this.connection.commitTransaction()).doOnSuccess(ignore -> this.inTransaction = false);
     }
 
     @Override
