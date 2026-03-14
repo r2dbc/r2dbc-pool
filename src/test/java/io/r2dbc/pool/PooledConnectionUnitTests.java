@@ -124,6 +124,23 @@ class PooledConnectionUnitTests {
     }
 
     @Test
+    void failedCommitShouldRollbackOnClose() {
+
+        AtomicBoolean rollbackCalled = new AtomicBoolean();
+        when(connectionMock.commitTransaction()).thenReturn(Mono.error(new RuntimeException("commit failed")));
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.<Void>empty().doOnSuccess(o -> rollbackCalled.set(true)));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock);
+        connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+        connection.commitTransaction().as(StepVerifier::create).verifyError();
+
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        verify(connectionMock).rollbackTransaction();
+        assertThat(rollbackCalled).isTrue();
+    }
+
+    @Test
     void rolledBackTransactionLeavesTransactionalStateAsIs() {
 
         AtomicInteger rollbacks = new AtomicInteger();
