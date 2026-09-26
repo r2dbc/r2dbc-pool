@@ -25,6 +25,7 @@ import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import org.springframework.util.ReflectionUtils;
 import reactor.core.Disposable;
+import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -1178,6 +1179,63 @@ final class ConnectionPoolUnitTests {
         subRef.get().onComplete();
 
         assertThat(closed).isTrue();
+    }
+
+    /**
+     * Regression for #216: late errors after connection-create timeout must not reach the
+     * default {@code Operators.onErrorDropped} / global {@link Hooks#onErrorDropped} handler.
+     * The pool installs a local {@code reactor.onErrorDropped.local} hook instead.
+     */
+    @Test
+    void createTimeoutShouldNotPropagateDroppedErrorToDefaultHook() {
+
+        AtomicReference<Throwable> globalDropped = new AtomicReference<>();
+        Hooks.onErrorDropped(globalDropped::set);
+
+        try {
+            ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+            Connection connectionMock = mock(Connection.class);
+
+            AtomicReference<Subscriber<? super Connection>> subRef = new AtomicReference<>();
+            Subscription subscription = new Subscription() {
+
+                @Override
+                public void request(long n) {
+                }
+
+                @Override
+                public void cancel() {
+                }
+            };
+            Publisher<Connection> connectionPublisher = subscriber -> {
+                subscriber.onSubscribe(subscription);
+                subRef.set(subscriber);
+            };
+
+            when(connectionFactoryMock.create()).thenReturn(Mono.from((Publisher) connectionPublisher));
+            when(connectionMock.validate(any())).thenReturn(Mono.just(true));
+            when(connectionMock.close()).thenReturn(Mono.empty());
+
+            ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+                    .initialSize(0)
+                    .maxCreateConnectionTime(Duration.ofMillis(1))
+                    .acquireRetry(0)
+                    .build();
+
+            ConnectionPool pool = new ConnectionPool(configuration);
+            CompletableFuture<Connection> future = pool.create().toFuture();
+            assertThatExceptionOfType(CompletionException.class).isThrownBy(future::join);
+
+            // Late error after timeout cancellation would hit onErrorDropped without a local hook
+            RuntimeException lateError = new RuntimeException("late allocation error");
+            subRef.get().onError(lateError);
+
+            // Allow async drop handling; global hook must not observe the error
+            await().during(Duration.ofMillis(200)).atMost(Duration.ofSeconds(2))
+                    .untilAsserted(() -> assertThat(globalDropped).hasValue(null));
+        } finally {
+            Hooks.resetOnErrorDropped();
+        }
     }
 
     interface ConnectionWithLifecycle extends Connection, Lifecycle {

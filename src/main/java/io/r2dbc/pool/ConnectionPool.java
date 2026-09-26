@@ -27,6 +27,7 @@ import reactor.pool.*;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
+import reactor.util.context.Context;
 
 import javax.management.JMException;
 import javax.management.MBeanServer;
@@ -56,7 +57,9 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
     private static final Logger logger = Loggers.getLogger(ConnectionPool.class);
 
-    private static final String HOOK_ON_DROPPED = "reactor.onNextDropped.local";
+    private static final String HOOK_ON_NEXT_DROPPED = "reactor.onNextDropped.local";
+
+    private static final String HOOK_ON_ERROR_DROPPED = "reactor.onErrorDropped.local";
 
     private final ConnectionFactory factory;
 
@@ -137,22 +140,57 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                     }
                 };
 
-                mono = mono.timeout(this.maxAcquireTime).contextWrite(context -> {
-
-                    Consumer<Object> onNextDropped = context.getOrEmpty(HOOK_ON_DROPPED).map(it -> (Consumer<Object>) it).map(it -> {
-
-                        return (Consumer<Object>) dropped -> {
-                            disposeConnection.accept(dropped);
-                            it.accept(dropped);
-                        };
-                    }).orElse(disposeConnection);
-
-                    return context.put(HOOK_ON_DROPPED, onNextDropped);
-                }).onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e));
+                mono = mono.timeout(this.maxAcquireTime)
+                        .contextWrite(context -> withDroppedHooks(context, disposeConnection))
+                        .onErrorMap(TimeoutException.class, e -> new R2dbcTimeoutException(timeoutMessage, e));
             }
             return mono;
         });
         this.create = configuration.getAcquireRetry() > 0 ? create.retry(configuration.getAcquireRetry()) : create;
+    }
+
+    /**
+     * Install local {@code onNextDropped} and {@code onErrorDropped} hooks.
+     * <p>
+     * {@code onNextDropped} disposes a late connection after timeout cancellation.
+     * {@code onErrorDropped} logs at debug instead of Reactor's default ERROR-level
+     * {@code Operators.onErrorDropped} handler (e.g. allocation timeouts for idle maintenance).
+     */
+    @SuppressWarnings("unchecked")
+    private static Context withDroppedHooks(Context context, Consumer<Object> disposeConnection) {
+
+        Consumer<Object> onNextDropped = context.getOrEmpty(HOOK_ON_NEXT_DROPPED).map(it -> (Consumer<Object>) it).map(it -> {
+
+            return (Consumer<Object>) dropped -> {
+                disposeConnection.accept(dropped);
+                it.accept(dropped);
+            };
+        }).orElse(disposeConnection);
+
+        return withErrorDroppedHook(context.put(HOOK_ON_NEXT_DROPPED, onNextDropped));
+    }
+
+    /**
+     * Install a local {@code onErrorDropped} hook that logs at debug and chains any existing hook.
+     */
+    @SuppressWarnings("unchecked")
+    private static Context withErrorDroppedHook(Context context) {
+
+        Consumer<Throwable> logDroppedError = error -> {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Connection allocation failed", error);
+            }
+        };
+
+        Consumer<Throwable> onErrorDropped = context.getOrEmpty(HOOK_ON_ERROR_DROPPED).map(it -> (Consumer<Throwable>) it).map(it -> {
+
+            return (Consumer<Throwable>) error -> {
+                logDroppedError.accept(error);
+                it.accept(error);
+            };
+        }).orElse(logDroppedError);
+
+        return context.put(HOOK_ON_ERROR_DROPPED, onErrorDropped);
     }
 
     @Nullable
@@ -266,6 +304,9 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             allocator = allocator.subscribeOn(Schedulers.single());
         }
 
+        // Always register a local onErrorDropped handler so background allocation failures
+        // (e.g. timeouts while maintaining minIdle) do not hit the default ERROR-level log.
+        // See https://github.com/r2dbc/r2dbc-pool/issues/216
         if (!maxCreateConnectionTime.isNegative()) {
 
             Consumer<Object> disposeConnection = dropped -> {
@@ -274,18 +315,10 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                 }
             };
 
-            allocator = allocator.timeout(maxCreateConnectionTime).contextWrite(context -> {
-
-                Consumer<Object> onNextDropped = context.getOrEmpty(HOOK_ON_DROPPED).map(it -> (Consumer<Object>) it).map(it -> {
-
-                    return (Consumer<Object>) dropped -> {
-                        disposeConnection.accept(dropped);
-                        it.accept(dropped);
-                    };
-                }).orElse(disposeConnection);
-
-                return context.put(HOOK_ON_DROPPED, onNextDropped);
-            });
+            allocator = allocator.timeout(maxCreateConnectionTime)
+                    .contextWrite(context -> withDroppedHooks(context, disposeConnection));
+        } else {
+            allocator = allocator.contextWrite(ConnectionPool::withErrorDroppedHook);
         }
 
         // Create eviction predicate that checks maxIdleTime and maxLifeTime.
