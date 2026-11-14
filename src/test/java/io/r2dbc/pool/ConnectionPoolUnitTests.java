@@ -1003,6 +1003,114 @@ final class ConnectionPoolUnitTests {
         assertThat(wasCalled).isTrue();
     }
 
+    /**
+     * What is to be tested: when the pool reads the auto-commit mode it later restores on release.
+     * <p>
+     * How will the test case be deemed successful and why: {@code isAutoCommit()} is read before
+     * {@code Lifecycle.postAllocate()} and before the user {@code postAllocate} function, and the pool records the
+     * value it read. The baseline is then the mode the connection factory delivers, not one a lifecycle function set
+     * for a single borrower.
+     * <p>
+     * Why is it important to test this test case: a {@code postAllocate} function that switches auto-commit off for
+     * every borrower must keep working. Since the release switches back to the mode at creation, the next acquisition
+     * switches it off again.
+     */
+    @Test
+    void shouldRecordAutoCommitBaselineAtCreation() {
+
+        List<String> order = new ArrayList<>();
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
+        when(connectionMock.isAutoCommit()).thenAnswer(it -> {
+            order.add("isAutoCommit");
+            return true;
+        });
+        when(connectionMock.postAllocate()).thenAnswer(it -> {
+            order.add("Lifecycle.postAllocate");
+            return Mono.empty();
+        });
+
+        ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
+                .postAllocate(connection -> Mono.fromRunnable(() -> order.add("postAllocate")))
+                .build();
+
+        ConnectionPool pool = new ConnectionPool(configuration);
+        pool.create().as(StepVerifier::create).expectNextCount(1).verifyComplete();
+
+        assertThat(order).containsExactly("isAutoCommit", "Lifecycle.postAllocate", "postAllocate");
+        assertThat(pool.getAutoCommitBaselines()).containsEntry(connectionMock, true);
+    }
+
+    /**
+     * What is to be tested: a connection whose {@code isAutoCommit()} throws when the pool reads it at creation.
+     * <p>
+     * How will the test case be deemed successful and why: the acquisition succeeds, no baseline is recorded, and the
+     * connection goes back into the pool when it is closed. An exception inside the allocation would fail it and leave
+     * the new connection open and unreachable; without a baseline the release behaves as before.
+     * <p>
+     * Why is it important to test this test case: reading the mode is new work on the allocation path. A driver that
+     * cannot answer it must not lose connections because of it.
+     */
+    @Test
+    void shouldSurviveFailingAutoCommitReadAtCreation() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
+        when(connectionMock.isAutoCommit()).thenThrow(new IllegalStateException("not supported"));
+
+        ConnectionPool pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxSize(1).build());
+        PoolMetrics poolMetrics = pool.getMetrics().get();
+
+        Mono.usingWhen(pool.create(), connection -> Mono.empty(), Connection::close).as(StepVerifier::create).verifyComplete();
+
+        assertThat(pool.getAutoCommitBaselines()).isEmpty();
+        assertThat(poolMetrics.idleSize()).isEqualTo(1);
+        verify(connectionMock, times(1)).isAutoCommit();
+    }
+
+    /**
+     * What is to be tested: that the pool forgets the baseline of a connection it destroys.
+     * <p>
+     * How will the test case be deemed successful and why: the baseline is recorded while the connection lives, and
+     * the map is empty once a failing {@code preRelease} function has invalidated it. The pool's destroy handler
+     * removes the entry.
+     * <p>
+     * Why is it important to test this test case: the map is keyed by the driver connection. An entry that outlives
+     * its connection keeps the closed connection reachable, one per destroyed connection, for the life of the pool.
+     */
+    @Test
+    void shouldForgetBaselineOnDestroy() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.empty());
+        when(connectionMock.isAutoCommit()).thenReturn(true);
+        when(connectionMock.close()).thenReturn(Mono.empty());
+
+        ConnectionPool pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxSize(1)
+                .preRelease(connection -> Mono.error(new IllegalStateException("preRelease failed")))
+                .build());
+        PoolMetrics poolMetrics = pool.getMetrics().get();
+
+        Mono.usingWhen(pool.create(), connection -> {
+            assertThat(pool.getAutoCommitBaselines()).containsEntry(connectionMock, true);
+            return Mono.empty();
+        }, Connection::close).as(StepVerifier::create).verifyComplete();
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.allocatedSize() == 0);
+        assertThat(pool.getAutoCommitBaselines()).isEmpty();
+        verify(connectionMock).close();
+    }
+
     @Test
     void shouldInvokePostAllocate() {
 

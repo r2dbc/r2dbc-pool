@@ -34,9 +34,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -55,6 +57,16 @@ class PooledConnectionUnitTests {
     @BeforeEach
     void setUp() {
         setup(connectionMock);
+    }
+
+    /**
+     * Stub {@link PooledRef#release()} so that the returned flag tells whether the release into the pool was
+     * subscribed. The method itself is called when the release path is assembled, also when it does not run.
+     */
+    private AtomicBoolean trackRelease() {
+        AtomicBoolean released = new AtomicBoolean();
+        when(pooledRefMock.release()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> released.set(true)));
+        return released;
     }
 
     private void setup(Connection connectionMock) {
@@ -233,14 +245,258 @@ class PooledConnectionUnitTests {
             return Mono.fromRunnable(() -> order.add("Lifecycle.preRelease.subscribe"));
         });
 
+        when(connectionMock.isAutoCommit()).thenReturn(false);
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.fromRunnable(() -> order.add("rollbackTransaction.subscribe")));
+        when(connectionMock.setAutoCommit(true)).thenReturn(Mono.fromRunnable(() -> order.add("setAutoCommit.subscribe")));
+
         PooledConnection connection = new PooledConnection(pooledRefMock, c -> {
             order.add("preRelease");
             return Mono.fromRunnable(() -> order.add("preRelease.subscribe"));
-        });
+        }, true);
 
         connection.close().as(StepVerifier::create).verifyComplete();
 
-        assertThat(order).containsExactly("preRelease", "preRelease.subscribe", "Lifecycle.preRelease", "Lifecycle.preRelease.subscribe");
+        assertThat(order).containsExactly("preRelease", "preRelease.subscribe", "rollbackTransaction.subscribe", "setAutoCommit.subscribe", "Lifecycle.preRelease",
+            "Lifecycle.preRelease.subscribe");
+    }
+
+    /**
+     * What is to be tested: the release of a connection that was created in auto-commit mode and is in manual-commit
+     * mode when it is closed, without a transaction the pool saw begin.
+     * <p>
+     * How will the test case be deemed successful and why: the release calls {@code rollbackTransaction()} and then
+     * {@code setAutoCommit(true)}, in that order, and returns the connection to the pool. Switching auto-commit on
+     * commits an open transaction, so only a rollback first discards the work of the borrower.
+     * <p>
+     * Why is it important to test this test case: manual-commit mode may hide a transaction that a driver's begin, a
+     * failed restore or code on the driver connection opened. Returning the connection in that mode lets the next
+     * borrower's statements run inside it (#233).
+     */
+    @Test
+    void shouldRestoreAutoCommitAfterRollback() {
+
+        List<String> calls = new ArrayList<>();
+        when(connectionMock.isAutoCommit()).thenReturn(false);
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.fromRunnable(() -> calls.add("rollbackTransaction")));
+        when(connectionMock.setAutoCommit(true)).thenReturn(Mono.fromRunnable(() -> calls.add("setAutoCommit(true)")));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, true);
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        assertThat(calls).containsExactly("rollbackTransaction", "setAutoCommit(true)");
+        verify(pooledRefMock).release();
+    }
+
+    /**
+     * What is to be tested: the release of a connection that is in the auto-commit mode it was created with and has no
+     * transaction the pool saw begin.
+     * <p>
+     * How will the test case be deemed successful and why: neither {@code rollbackTransaction()} nor
+     * {@code setAutoCommit(…)} is called, and the connection goes back into the pool. There is nothing to repair, so
+     * the release must cost nothing.
+     * <p>
+     * Why is it important to test this test case: it is the common case. A round trip on every release would slow
+     * down every borrower.
+     */
+    @Test
+    void shouldNotTouchConnectionInBaselineState() {
+
+        when(connectionMock.isAutoCommit()).thenReturn(true);
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, true);
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        verify(connectionMock, never()).rollbackTransaction();
+        verify(connectionMock, never()).setAutoCommit(anyBoolean());
+        verify(pooledRefMock).release();
+    }
+
+    /**
+     * What is to be tested: the release of a connection that was created in manual-commit mode and is in auto-commit
+     * mode when it is closed.
+     * <p>
+     * How will the test case be deemed successful and why: the release calls {@code setAutoCommit(false)} and no
+     * {@code rollbackTransaction()}. In auto-commit mode no transaction can be open, so there is nothing to roll back,
+     * and the mode at creation is what the next borrower expects.
+     * <p>
+     * Why is it important to test this test case: a pool whose factory hands out connections in manual-commit mode
+     * must keep them that way, also after a borrower switched auto-commit on.
+     */
+    @Test
+    void shouldRestoreManualCommitBaseline() {
+
+        when(connectionMock.isAutoCommit()).thenReturn(true);
+        when(connectionMock.setAutoCommit(false)).thenReturn(Mono.empty());
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, false);
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        verify(connectionMock).setAutoCommit(false);
+        verify(connectionMock, never()).rollbackTransaction();
+        verify(pooledRefMock).release();
+    }
+
+    /**
+     * What is to be tested: a release whose rollback fails.
+     * <p>
+     * How will the test case be deemed successful and why: {@code setAutoCommit(…)} is never called, the connection is
+     * invalidated, and it is not returned to the pool. After a failed rollback the state of the session is unknown,
+     * and switching auto-commit on could commit what the rollback was meant to discard.
+     * <p>
+     * Why is it important to test this test case: until now a failed rollback was swallowed and the connection went
+     * back into the pool, which is how a pool gets poisoned.
+     */
+    @Test
+    void failedRollbackShouldInvalidateWithoutRestore() {
+
+        AtomicBoolean invalidated = new AtomicBoolean();
+        AtomicBoolean released = trackRelease();
+        when(pooledRefMock.invalidate()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> invalidated.set(true)));
+        when(connectionMock.isAutoCommit()).thenReturn(false);
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.error(new RuntimeException("rollback failed")));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, true);
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        verify(connectionMock, never()).setAutoCommit(anyBoolean());
+        assertThat(invalidated).isTrue();
+        assertThat(released).as("released into the pool").isFalse();
+    }
+
+    /**
+     * What is to be tested: a release whose restore of the auto-commit mode fails.
+     * <p>
+     * How will the test case be deemed successful and why: the connection is invalidated and not returned to the pool.
+     * A connection in the wrong mode must not reach the next borrower.
+     * <p>
+     * Why is it important to test this test case: the restore is the step that guarantees the mode; if it may fail
+     * silently, the guarantee is gone.
+     */
+    @Test
+    void failedRestoreShouldInvalidate() {
+
+        AtomicBoolean invalidated = new AtomicBoolean();
+        AtomicBoolean released = trackRelease();
+        when(pooledRefMock.invalidate()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> invalidated.set(true)));
+        when(connectionMock.isAutoCommit()).thenReturn(false);
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.empty());
+        when(connectionMock.setAutoCommit(true)).thenReturn(Mono.error(new RuntimeException("restore failed")));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, true);
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        assertThat(invalidated).isTrue();
+        assertThat(released).as("released into the pool").isFalse();
+    }
+
+    /**
+     * What is to be tested: that the release reads the auto-commit mode after a user {@code preRelease} function ran.
+     * <p>
+     * How will the test case be deemed successful and why: the connection is in manual-commit mode until the
+     * {@code preRelease} function switches it back, no transaction was begun, and the release calls neither
+     * {@code rollbackTransaction()} nor {@code setAutoCommit(…)}. Had it read the mode before, it would see a
+     * deviation and repair the connection a second time.
+     * <p>
+     * Why is it important to test this test case: applications repair connections in {@code preRelease} today. The
+     * pool must work next to such a function without doing its work twice.
+     */
+    @Test
+    void shouldReadAutoCommitAfterUserPreRelease() {
+
+        AtomicBoolean autoCommit = new AtomicBoolean(false);
+        when(connectionMock.isAutoCommit()).thenAnswer(it -> autoCommit.get());
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, c -> Mono.fromRunnable(() -> autoCommit.set(true)), true);
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        verify(connectionMock, never()).rollbackTransaction();
+        verify(connectionMock, never()).setAutoCommit(anyBoolean());
+        verify(pooledRefMock).release();
+    }
+
+    /**
+     * What is to be tested: the same as {@link #shouldReadAutoCommitAfterUserPreRelease()}, with a transaction that
+     * was begun and not committed.
+     * <p>
+     * How will the test case be deemed successful and why: the release calls {@code rollbackTransaction()} once and no
+     * {@code setAutoCommit(…)}. The {@code preRelease} function works on the driver connection and cannot clear the
+     * pool's flag, so the pool rolls back once more; the mode is already right.
+     * <p>
+     * Why is it important to test this test case: an application function and the pool's reset run side by side
+     * while applications migrate. The second rollback is harmless, a restore would not be.
+     */
+    @Test
+    void shouldRollbackOnceMoreAfterUserPreReleaseWhenInTransaction() {
+
+        AtomicBoolean autoCommit = new AtomicBoolean(false);
+        when(connectionMock.isAutoCommit()).thenAnswer(it -> autoCommit.get());
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.empty());
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, c -> Mono.fromRunnable(() -> autoCommit.set(true)), true);
+        connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        verify(connectionMock, times(1)).rollbackTransaction();
+        verify(connectionMock, never()).setAutoCommit(anyBoolean());
+        verify(pooledRefMock).release();
+    }
+
+    /**
+     * What is to be tested: a release whose user {@code preRelease} function fails.
+     * <p>
+     * How will the test case be deemed successful and why: the connection is invalidated once, and neither the
+     * rollback, nor {@code Lifecycle.preRelease()}, nor the release into the pool runs. The invalidation closes the
+     * connection, so every further step would act on a closed connection and fail a second time for the same cause.
+     * <p>
+     * Why is it important to test this test case: until now the release went on after the invalidation, and a
+     * connection whose cleanup failed could go back into the pool.
+     */
+    @Test
+    void failedPreReleaseShouldStopTheRelease() {
+
+        ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
+        reset(pooledRefMock);
+        setup(connectionMock);
+        AtomicBoolean released = trackRelease();
+
+        AtomicInteger invalidations = new AtomicInteger();
+        when(pooledRefMock.invalidate()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> invalidations.incrementAndGet()));
+        when(connectionMock.isAutoCommit()).thenReturn(false);
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, c -> Mono.error(new RuntimeException("preRelease failed")), true);
+        connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        assertThat(invalidations).hasValue(1);
+        verify(connectionMock, never()).rollbackTransaction();
+        verify(connectionMock, never()).preRelease();
+        assertThat(released).as("released into the pool").isFalse();
+    }
+
+    /**
+     * What is to be tested: the release of a connection whose auto-commit mode at creation is unknown.
+     * <p>
+     * How will the test case be deemed successful and why: the release rolls back the transaction that was begun,
+     * never reads {@code isAutoCommit()} and never calls {@code setAutoCommit(…)}. Without a baseline there is nothing
+     * to compare with, so the release behaves as before.
+     * <p>
+     * Why is it important to test this test case: the mode is unknown when reading it at creation failed, and for a
+     * {@code PooledConnection} created without one. Those connections must not fail on a read the release does not
+     * need.
+     */
+    @Test
+    void unknownBaselineKeepsTodaysBehaviour() {
+
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.empty());
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, null);
+        connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        verify(connectionMock).rollbackTransaction();
+        verify(connectionMock, never()).isAutoCommit();
+        verify(connectionMock, never()).setAutoCommit(anyBoolean());
+        verify(pooledRefMock).release();
     }
 
     interface ConnectionWithLifecycle extends Connection, Lifecycle {

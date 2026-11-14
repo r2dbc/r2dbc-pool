@@ -35,8 +35,11 @@ import javax.management.ObjectName;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Hashtable;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
@@ -67,6 +70,12 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
     private final Duration maxValidationTime;
 
     private final List<Runnable> destroyHandlers = new ArrayList<>();
+
+    /**
+     * The auto-commit mode of each connection when it was created, restored on release. Identity semantics, because a
+     * driver connection may override {@code equals}/{@code hashCode}.
+     */
+    private final Map<Connection, Boolean> autoCommitBaselines = Collections.synchronizedMap(new IdentityHashMap<>());
 
     private final Optional<PoolMetrics> poolMetrics;
 
@@ -195,7 +204,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             prepare = prepare == null ? postAllocate : prepare.then(postAllocate);
         }
 
-        PooledConnection pooledConnection = new PooledConnection(ref, this.preRelease);
+        PooledConnection pooledConnection = new PooledConnection(ref, this.preRelease, this.autoCommitBaselines.get(connection));
         Mono<Connection> conn;
         if (prepare == null) {
             conn = getValidConnection(allocateValidation, pooledConnection);
@@ -205,6 +214,23 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         conn = conn.onErrorResume(throwable -> ref.invalidate().then(Mono.error(throwable)));
         return conn;
+    }
+
+    private void recordAutoCommitBaseline(Connection connection) {
+
+        // An exception thrown here would fail the allocation and leave the connection open and unreachable.
+        try {
+            this.autoCommitBaselines.put(connection, connection.isAutoCommit());
+        } catch (RuntimeException e) {
+            logger.debug("Cannot read the auto-commit mode of a new connection; it is not restored on release", e);
+        }
+    }
+
+    /**
+     * The recorded auto-commit baselines, for tests.
+     */
+    Map<Connection, Boolean> getAutoCommitBaselines() {
+        return Collections.unmodifiableMap(this.autoCommitBaselines);
     }
 
     private Mono<Connection> getValidConnection(Function<Connection, Mono<Void>> allocateValidation, Connection connection) {
@@ -288,6 +314,10 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             });
         }
 
+        // Record the auto-commit mode as the connection factory delivers it. Behind the timeout above, so that a connection
+        // dropped by it is never recorded.
+        allocator = allocator.doOnNext(this::recordAutoCommitBaseline);
+
         // Create eviction predicate that checks maxIdleTime and maxLifeTime.
         // This is because "PoolBuilder#evictionIdle()" and "PoolBuilder#evictionPredicate()" cannot be used together in
         // current implementation. (https://github.com/reactor/reactor-pool/issues/33)
@@ -307,7 +337,10 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                 .clock(configuration.getClock())
                 .metricsRecorder(metricsRecorder)
                 .evictionPredicate(evictionPredicate)
-                .destroyHandler(Connection::close)
+                .destroyHandler(connection -> {
+                    this.autoCommitBaselines.remove(connection);
+                    return connection.close();
+                })
                 .idleResourceReuseMruOrder(); // MRU to support eviction of idle
 
         if (maxSize == -1 || initialSize > 0) {

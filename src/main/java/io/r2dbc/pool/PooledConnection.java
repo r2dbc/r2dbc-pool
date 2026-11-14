@@ -36,7 +36,9 @@ import java.time.Duration;
 import java.util.function.Function;
 
 /**
- * Pooled {@link Connection} implementation. Performs a cleanup on {@link #close()} if used transactionally.
+ * Pooled {@link Connection} implementation. Performs a cleanup on {@link #close()}: rolls back a transaction that was
+ * left open and restores the auto-commit mode the connection had when it was created. A failure of the cleanup, or of a
+ * {@code preRelease} function, invalidates the connection instead of returning it to the pool.
  * <p>
  *
  * @author Mark Paluch
@@ -51,6 +53,9 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
 
     private final Mono<Void> release;
 
+    @Nullable
+    private final Boolean autoCommitBaseline;
+
     private volatile boolean closed = false;
 
     private volatile boolean inTransaction = false;
@@ -60,21 +65,29 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     }
 
     PooledConnection(PooledRef<Connection> ref, @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease) {
+        this(ref, preRelease, null);
+    }
+
+    /**
+     * @param autoCommitBaseline the auto-commit mode the connection had when it was created, restored on release;
+     *                           {@code null} if unknown, in which case only an unfinished transaction is rolled back
+     */
+    PooledConnection(PooledRef<Connection> ref, @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, @Nullable Boolean autoCommitBaseline) {
         this.ref = ref;
         this.connection = ref.poolable();
+        this.autoCommitBaseline = autoCommitBaseline;
         this.release = Mono.defer(() -> {
             return Validation.validate(this, ValidationDepth.LOCAL).then(Mono.defer(() -> {
 
                 Mono<Void> cleanup = null;
 
                 if (preRelease != null) {
-                    cleanup = Mono.from(preRelease.apply(this.connection)).onErrorResume(throwable -> handleCleanupError(throwable, ref));
+                    cleanup = Mono.from(preRelease.apply(this.connection));
                 }
 
-                if (this.inTransaction) {
-                    Mono<Void> rollback = rollbackTransaction().onErrorResume(throwable -> Mono.empty());
-                    cleanup = cleanup == null ? rollback : cleanup.then(rollback);
-                }
+                // Deferred, so that it sees the state the preRelease function left behind.
+                Mono<Void> reset = resetTransactionState();
+                cleanup = cleanup == null ? reset : cleanup.then(reset);
 
                 if (this.connection instanceof Lifecycle) {
 
@@ -82,8 +95,36 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
                     cleanup = cleanup == null ? lifecyclePreRelease : cleanup.then(lifecyclePreRelease);
                 }
 
-                return (cleanup == null ? Mono.empty() : cleanup).doOnSubscribe(ignore -> this.closed = true).then(this.ref.release());
+                return cleanup.doOnSubscribe(ignore -> this.closed = true).then(this.ref.release());
             })).onErrorResume(throwable -> handleCleanupError(throwable, ref)).doOnSubscribe(subscription -> logger.debug("Releasing connection"));
+        });
+    }
+
+    /**
+     * Roll back a transaction that is left open and restore the auto-commit mode the connection was created with.
+     * <p>
+     * A rollback runs if a transaction was begun and not committed, or if the connection is in manual-commit mode
+     * although it was created in auto-commit mode: manual-commit mode may hide a transaction the pool did not see
+     * begin. The auto-commit mode is restored only after the rollback, because switching auto-commit on commits an
+     * open transaction. An error stops the release, and the connection is invalidated.
+     */
+    private Mono<Void> resetTransactionState() {
+        return Mono.defer(() -> {
+
+            Boolean baseline = this.autoCommitBaseline;
+            boolean deviates = baseline != null && this.connection.isAutoCommit() != baseline;
+
+            // Deviating from an auto-commit baseline means manual-commit mode.
+            boolean rollback = this.inTransaction || (deviates && baseline);
+
+            Mono<Void> reset = rollback ? rollbackTransaction() : Mono.empty();
+
+            if (deviates) {
+                // The driver connection: this connection is already marked closed.
+                reset = reset.then(Mono.defer(() -> Mono.from(this.connection.setAutoCommit(baseline))));
+            }
+
+            return reset;
         });
     }
 

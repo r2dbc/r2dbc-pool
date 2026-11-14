@@ -108,7 +108,7 @@ pool.dispose();
 
 ## `Lifecycle` support
 
-The R2DBC specification defines as of version 0.9 lifecycle support for connections (`Lifecycle.postAllocate`, `Lifecycle.preRelease`). R2DBC Pool integrates with connections that implement lifecycle methods by inspecting the actual connection. `postAllocate` is called after allocating a connection and before returning it to the caller. `preRelease` is called upon `Connection.close()`, right before returning the connection into the pool. Any error signals in `postAllocate` are propagated to the allocation subscriber. Error signals of `preRelease` are logged and suppressed. In both cases, error signals lead to immediate invalidation of the connection.
+The R2DBC specification defines as of version 0.9 lifecycle support for connections (`Lifecycle.postAllocate`, `Lifecycle.preRelease`). R2DBC Pool integrates with connections that implement lifecycle methods by inspecting the actual connection. `postAllocate` is called after allocating a connection and before returning it to the caller. `preRelease` is called upon `Connection.close()`, right before returning the connection into the pool. Any error signals in `postAllocate` are propagated to the allocation subscriber. Error signals of `preRelease` are logged and suppressed. In both cases, error signals lead to immediate invalidation of the connection, and a failing `preRelease` stops the release.
 
 Additionally, the pool accepts custom `postAllocate` and `preRelease` functions through the builder to prepare the connection or to cleanup the connection before returning it into the pool. Custom lifecycle methods are called within the `Lifecycle` closure to ensure the connection-side lifecycle.
 
@@ -120,6 +120,16 @@ ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(
 
 ConnectionPool pool = new ConnectionPool(configuration);
 ```
+
+When a connection is closed, the pool runs these steps before it returns the connection into the pool:
+
+1. a local validation of the connection,
+2. the custom `preRelease` function, if configured,
+3. a rollback, if a transaction was begun through the pooled connection and not committed, or if the connection is in manual-commit mode although it was created in auto-commit mode,
+4. a restore of the auto-commit mode the connection had when it was created, if it differs,
+5. `Lifecycle.preRelease`.
+
+The pool records the auto-commit mode when the `ConnectionFactory` delivers a connection, before `postAllocate`. A `postAllocate` function that changes the mode for each borrower keeps working: the release switches back, the next acquisition switches again. If a step fails, the remaining steps are skipped and the connection is invalidated instead of returned. The error is logged at `DEBUG`, and the `close()` publisher completes.
 
 ### Maven configuration
 
