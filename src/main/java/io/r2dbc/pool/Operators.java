@@ -19,7 +19,7 @@ package io.r2dbc.pool;
 import org.reactivestreams.Subscription;
 import reactor.core.publisher.Mono;
 
-import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 /**
  * Operator utility.
@@ -32,34 +32,22 @@ final class Operators {
     }
 
     /**
-     * Replay signals from {@link Mono the source} until cancellation. Drains the source for data signals if the subscriber cancels the subscription.
+     * Replay signals from {@link Mono the source} until cancellation, and decide on {@link Subscription#cancel() cancel}
+     * who owns the value.
      * <p>
-     * Draining data is required to complete a particular request/response window and clear the protocol state as client code expects to start a request/response conversation without leaving
-     * previous frames on the stack.
+     * A cancel before the value drains the source, discards a late value and runs {@code onCancel}. A cancel from inside
+     * the delivery, on the delivering thread, leaves the value with the subscriber. Any other cancel after the value was
+     * delivered passes the value to {@code onAbandoned}. Each callback runs at most once per subscription, and never
+     * both; an exception from a callback is dropped through {@code Operators.onErrorDropped}.
      *
-     * @param source the source to decorate.
-     * @param <T>    The type of values in both source and output sequences.
+     * @param source      the source to decorate.
+     * @param onCancel    called on a cancel before the value
+     * @param onAbandoned called with the value on a cancel after the subscriber has given it up
+     * @param <T>         The type of values in both source and output sequences.
      * @return decorated {@link Mono}.
      */
-    public static <T> Mono<T> discardOnCancel(Mono<? extends T> source) {
-        return new MonoDiscardOnCancel<>(source, () -> false);
-    }
-
-    /**
-     * Replay signals from {@link Mono the source} until cancellation. Drains the source for data signals if the subscriber cancels the subscription.
-     * <p>
-     * Draining data is required to complete a particular request/response window and clear the protocol state as client code expects to start a request/response conversation without leaving
-     * previous frames on the stack.
-     * <p>Propagate the {@link Subscription#cancel()}  signal to a {@link Runnable consumer}.
-     *
-     * @param source   the source to decorate.
-     * @param onCancel {@link BooleanSupplier} notified when the resulting {@link Mono} receives a {@link Subscription#cancel() cancel} signal. Expects the callback to return a boolean flag whether
-     *                 to propagate the cancellation signal upstream via {@code true} or {@code false} to drain the items and suppress upstream cancellation.
-     * @param <T>      The type of values in both source and output sequences.
-     * @return decorated {@link Mono}.
-     */
-    public static <T> Mono<T> discardOnCancel(Mono<? extends T> source, BooleanSupplier onCancel) {
-        return new MonoDiscardOnCancel<>(source, onCancel);
+    public static <T> Mono<T> discardOnCancel(Mono<? extends T> source, Runnable onCancel, Consumer<? super T> onAbandoned) {
+        return new MonoDiscardOnCancel<>(source, onCancel, onAbandoned);
     }
 
 }

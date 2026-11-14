@@ -122,10 +122,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                             conn = prepareConnection(configuration, ref, connection, allocateValidation);
                         }
 
-                        return Operators.discardOnCancel(conn, () -> {
-                            ref.release().subscribe();
-                            return false;
-                        });
+                        return Operators.discardOnCancel(conn, () -> ref.release().subscribe(),
+                                abandoned -> Mono.from(abandoned.close()).subscribe(null, e -> logger.warn("Release after cancellation failed", e)));
                     })
                     .name(acqName);
 

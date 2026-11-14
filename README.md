@@ -50,6 +50,13 @@ Mono<Object> resultMono = Mono.usingWhen(pooledConnectionFactory.create(),
         Connection::close);
 ```
 
+Consume the result of `create()` with `usingWhen`, as above. When the subscription is cancelled after the connection was delivered, the pool decides who owns the connection:
+
+* A cancel from inside the delivery, on the thread that delivers the connection, as `Flux.next()`, `take(1)` or `awaitFirst()` send it, leaves the connection with the subscriber. The subscriber closes it.
+* Any other cancel after the delivery, for example of a `flatMap` that a timeout cancels while it works, means that the subscriber gave the connection up. The pool closes it, with the cleanup that `Connection.close()` runs.
+
+A `flatMap` whose mapper throws when it receives the connection cancels from inside the delivery as well, and then nobody closes the connection. `usingWhen` avoids that case.
+
 **Supported ConnectionFactory Discovery Options**
 
 | Option                       | Description
