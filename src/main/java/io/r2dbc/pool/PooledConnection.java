@@ -139,7 +139,7 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
 
     private static Mono<Void> handleCleanupError(Throwable throwable, PooledRef<Connection> ref) {
 
-        logger.debug("Release failed", throwable);
+        logger.warn("Release failed, the connection is invalidated", throwable);
         return ref.invalidate();
     }
 

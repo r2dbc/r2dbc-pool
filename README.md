@@ -129,7 +129,7 @@ When a connection is closed, the pool runs these steps before it returns the con
 4. a restore of the auto-commit mode the connection had when it was created, if it differs after the rollback,
 5. `Lifecycle.preRelease`.
 
-The pool records the auto-commit mode when the `ConnectionFactory` delivers a connection, before `postAllocate`. A `postAllocate` function that changes the mode for each borrower keeps working: the release switches back, the next acquisition switches again. If a step fails, the remaining steps are skipped and the connection is invalidated instead of returned. The error is logged at `DEBUG`, and the `close()` publisher completes.
+The pool records the auto-commit mode when the `ConnectionFactory` delivers a connection, before `postAllocate`. A `postAllocate` function that changes the mode for each borrower keeps working: the release switches back, the next acquisition switches again. If a step fails, the remaining steps are skipped and the connection is invalidated instead of returned. The error is logged at `WARN`, and the `close()` publisher completes.
 
 ### Maven configuration
 

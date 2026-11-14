@@ -218,7 +218,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         try {
             this.autoCommitBaselines.record(connection, connection.isAutoCommit());
         } catch (RuntimeException e) {
-            logger.debug("Cannot read the auto-commit mode of a new connection; it is not restored on release", e);
+            logger.warn("Cannot read the auto-commit mode of a new connection; it is not restored on release", e);
         }
     }
 
