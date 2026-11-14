@@ -242,6 +242,37 @@ class ConnectionPoolBaselineUnitTests {
     }
 
     /**
+     * What is to be tested: a driver that reports manual-commit mode while a transaction is open and decides on a
+     * rollback when it is subscribed, as r2dbc-postgresql does, and a borrower that begins a transaction on the driver
+     * connection and closes without committing.
+     * <p>
+     * How will the test case be deemed successful and why: the release rolled back, no transaction is open afterwards,
+     * and the connection reports auto-commit mode without a {@code setAutoCommit(…)} call. The pool saw no begin, but
+     * the open transaction showed as manual-commit mode, and the rollback ended it.
+     * <p>
+     * Why is it important to test this test case: on such a driver the mode is the only sign of a transaction the pool
+     * did not see begin, and switching auto-commit on would commit it instead of discarding it.
+     */
+    @Test
+    void transactionBegunOnTheDriverConnectionShouldNotPoisonADriverThatDecidesOnSubscription() {
+
+        this.pool.dispose();
+        this.created.clear();
+        this.pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactory(() -> new TransactionalStateConnection(TransactionalStateConnection.Semantics.STATUS_AT_SUBSCRIPTION)))
+            .maxSize(1).build());
+
+        TransactionalStateConnection connection = warmup();
+
+        borrow(c -> Mono.from(((PooledConnection) c).unwrap().beginTransaction()).thenMany(c.createStatement("INSERT INTO t VALUES (1)").execute()));
+
+        assertThat(connection.calls()).as("calls up to the end of the release")
+            .containsSubsequence("beginTransaction", "execute(INSERT INTO t VALUES (1))", "rollbackTransaction");
+        assertThat(connection.calls()).doesNotContain("commitTransaction");
+        assertThat(connection.isTransactionOpen()).as("transaction open after the release").isFalse();
+        assertThat(connection.isAutoCommit()).as("auto-commit after the release").isTrue();
+    }
+
+    /**
      * Create the pool's only connection and return it while it is idle.
      */
     private TransactionalStateConnection warmup() {
