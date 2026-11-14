@@ -96,13 +96,15 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     @Override
     public Mono<Void> beginTransaction() {
         assertNotClosed();
-        return Mono.from(this.connection.beginTransaction()).doOnSubscribe(ignore -> this.inTransaction = true).doOnError(e -> this.inTransaction = false);
+        // Kept set after a failed or cancelled begin, so that close() rolls back: the driver may have completed part of it.
+        return Mono.from(this.connection.beginTransaction()).doOnSubscribe(ignore -> this.inTransaction = true);
     }
 
     @Override
     public Mono<Void> beginTransaction(TransactionDefinition definition) {
         assertNotClosed();
-        return Mono.from(this.connection.beginTransaction(definition)).doOnSubscribe(ignore -> this.inTransaction = true).doOnError(e -> this.inTransaction = false);
+        // Kept set after a failed or cancelled begin, see beginTransaction().
+        return Mono.from(this.connection.beginTransaction(definition)).doOnSubscribe(ignore -> this.inTransaction = true);
     }
 
     @Override
