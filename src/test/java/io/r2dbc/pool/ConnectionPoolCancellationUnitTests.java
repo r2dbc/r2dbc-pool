@@ -98,15 +98,12 @@ class ConnectionPoolCancellationUnitTests {
         TransactionalStateConnection connection = warmup();
         PoolMetrics metrics = this.pool.getMetrics().get();
 
-        cancelDuringBegin(connection);
+        cancelDuringBegin(connection).release();
 
         await().atMost(TIMEOUT).until(() -> metrics.idleSize() == 1);
-        assertThat(connection.calls()).as("calls before the connection was idle again").contains("rollbackTransaction");
-
-        await().atMost(TIMEOUT).until(() -> connection.calls().contains("beginTransaction"));
+        assertThat(connection.calls()).as("calls before the connection was idle again").containsSubsequence("beginTransaction", "rollbackTransaction");
         assertThat(connection.isTransactionOpen()).as("transaction open after the cancelled begin has run").isFalse();
 
-        connection.delay("beginTransaction", Duration.ZERO);
         for (int i = 1; i <= 10; i++) {
             assertThatCode(this::transaction).as("transaction %d", i).doesNotThrowAnyException();
         }
@@ -129,7 +126,7 @@ class ConnectionPoolCancellationUnitTests {
         TransactionalStateConnection connection = warmup();
         PoolMetrics metrics = this.pool.getMetrics().get();
 
-        cancelDuringBegin(connection);
+        cancelDuringBegin(connection).release();
 
         await().atMost(TIMEOUT).until(() -> connection.calls().contains("beginTransaction"));
         await().atMost(TIMEOUT).untilAsserted(() -> {
@@ -173,22 +170,18 @@ class ConnectionPoolCancellationUnitTests {
 
     /**
      * The shape of Spring's {@code R2dbcTransactionManager.doBegin}: the connection is consumed with {@code flatMap}
-     * and nothing handles a cancel. The begin takes 200 ms, the subscriber is disposed after 50 ms.
+     * and nothing handles a cancel. The queued part of the begin is held; the subscriber is disposed once the begin is
+     * next in the driver's queue, and the begin goes on when the returned hold is released.
      */
-    private void cancelDuringBegin(TransactionalStateConnection connection) {
+    private TransactionalStateConnection.Hold cancelDuringBegin(TransactionalStateConnection connection) {
 
-        connection.delay("beginTransaction", Duration.ofMillis(200));
+        TransactionalStateConnection.Hold begin = connection.hold("beginTransaction");
 
-        Disposable begin = this.pool.create().flatMap(c -> Mono.from(c.beginTransaction(IsolationLevel.READ_COMMITTED))).subscribe();
+        Disposable subscription = this.pool.create().flatMap(c -> Mono.from(c.beginTransaction(IsolationLevel.READ_COMMITTED))).subscribe();
+        begin.awaitReached(TIMEOUT);
 
-        try {
-            Thread.sleep(50);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException(e);
-        }
-
-        begin.dispose();
+        subscription.dispose();
+        return begin;
     }
 
 }
