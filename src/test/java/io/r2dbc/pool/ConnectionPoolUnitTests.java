@@ -1146,6 +1146,55 @@ final class ConnectionPoolUnitTests {
         verify(connectionMock).close();
     }
 
+    /**
+     * What is to be tested: a borrower that waits for the only slot of the pool while the release of the connection
+     * in it times out, and the driver's {@code close()} of that connection never completes.
+     * <p>
+     * How will the test case be deemed successful and why: the waiting borrower gets a new connection. With
+     * {@code maxReleaseTime} the pool bounds the close of the destroyed connection as well, so the destroy completes
+     * and the pool serves the borrower.
+     * <p>
+     * Why is it important to test this test case: reactor-pool gives the permit back when the destroy starts, but
+     * serves waiting borrowers only when the destroy has completed. A release that times out is likely followed by a
+     * close that hangs, and the borrower would wait until another acquisition or release happens.
+     */
+    @Test
+    void waitingBorrowerShouldGetAConnectionAfterReleaseTimeout() {
+
+        Connection stalled = mock(Connection.class);
+        when(stalled.validate(any())).thenReturn(Mono.just(true));
+        when(stalled.isAutoCommit()).thenReturn(true);
+        when(stalled.beginTransaction()).thenReturn(Mono.empty());
+        when(stalled.rollbackTransaction()).thenReturn(Mono.never());
+        when(stalled.close()).thenReturn(Mono.never());
+
+        Connection healthy = mock(Connection.class);
+        when(healthy.validate(any())).thenReturn(Mono.just(true));
+        when(healthy.isAutoCommit()).thenReturn(true);
+        when(healthy.close()).thenReturn(Mono.empty());
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        AtomicInteger created = new AtomicInteger();
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.fromSupplier(() -> created.getAndIncrement() == 0 ? stalled : healthy));
+
+        ConnectionPool pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxSize(1)
+                .maxReleaseTime(Duration.ofMillis(100))
+                .build());
+        PoolMetrics poolMetrics = pool.getMetrics().get();
+
+        Connection first = pool.create().block(Duration.ofSeconds(2));
+        Mono.from(first.beginTransaction()).block(Duration.ofSeconds(2));
+
+        CompletableFuture<Connection> waiting = pool.create().toFuture();
+        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.pendingAcquireSize() == 1);
+
+        Mono.from(first.close()).as(StepVerifier::create).expectComplete().verify(Duration.ofSeconds(2));
+
+        Connection second = Mono.fromFuture(waiting).block(Duration.ofSeconds(2));
+        assertThat(((PooledConnection) second).unwrap()).isSameAs(healthy);
+        verify(stalled).close();
+    }
+
     @Test
     void shouldInvokePostAllocate() {
 

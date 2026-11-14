@@ -274,6 +274,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         int maxSize = configuration.getMaxSize();
         Duration maxIdleTime = configuration.getMaxIdleTime();
         Duration maxLifeTime = configuration.getMaxLifeTime();
+        Duration maxReleaseTime = configuration.getMaxReleaseTime();
         Consumer<PoolBuilder<Connection, ? extends PoolConfig<? extends Connection>>> customizer = configuration.getCustomizer();
         PoolMetricsRecorder metricsRecorder = configuration.getMetricsRecorder();
 
@@ -335,7 +336,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                 .evictionPredicate(evictionPredicate)
                 .destroyHandler(connection -> {
                     this.autoCommitBaselines.forget(connection);
-                    return connection.close();
+                    return closeWithin(connection, maxReleaseTime);
                 })
                 .idleResourceReuseMruOrder(); // MRU to support eviction of idle
 
@@ -358,6 +359,23 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
         customizer.accept(builder);
 
         return builder.buildPool();
+    }
+
+    /**
+     * Close a connection that the pool destroys, bounded by {@code maxReleaseTime}. reactor-pool gives the permit back
+     * when the destroy starts, but serves a waiting borrower only when the destroy has completed: a {@code close()} that
+     * hangs would keep that borrower waiting.
+     */
+    private static Publisher<Void> closeWithin(Connection connection, Duration maxReleaseTime) {
+
+        if (maxReleaseTime.isNegative()) {
+            return connection.close();
+        }
+
+        return Mono.from(connection.close()).timeout(maxReleaseTime).onErrorResume(TimeoutException.class, e -> {
+            logger.warn(String.format("Closing a connection timed out after %dms; the pool no longer waits for it", maxReleaseTime.toMillis()));
+            return Mono.empty();
+        });
     }
 
     @Override

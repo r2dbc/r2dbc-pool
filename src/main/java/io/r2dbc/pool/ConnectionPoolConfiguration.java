@@ -480,6 +480,10 @@ public final class ConnectionPoolConfiguration {
          * mode, and {@code Lifecycle.preRelease()}. When it elapses, the connection is invalidated instead of released, and
          * {@link Connection#close()} completes without waiting for the connection to be destroyed. Default is no timeout.
          * <p>
+         * The timeout bounds the driver's {@code close()} of a connection that the pool destroys as well. The pool counts
+         * the slot of a destroyed connection as free at once, but serves a borrower that already waits only once the close
+         * has completed; a close that hangs would keep that borrower waiting.
+         * <p>
          * A call that the timeout cancels may go on inside the driver, and the connection is closed in a state the pool does
          * not know. What the server does with a transaction that is still open at that point depends on the driver and the
          * database.
