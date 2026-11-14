@@ -35,11 +35,8 @@ import javax.management.ObjectName;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Hashtable;
-import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
@@ -72,10 +69,9 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
     private final List<Runnable> destroyHandlers = new ArrayList<>();
 
     /**
-     * The auto-commit mode of each connection when it was created, restored on release. Identity semantics, because a
-     * driver connection may override {@code equals}/{@code hashCode}.
+     * The auto-commit mode of each connection when it was created, restored on release.
      */
-    private final Map<Connection, Boolean> autoCommitBaselines = Collections.synchronizedMap(new IdentityHashMap<>());
+    private final AutoCommitBaselines autoCommitBaselines = new AutoCommitBaselines();
 
     private final Optional<PoolMetrics> poolMetrics;
 
@@ -220,7 +216,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
 
         // An exception thrown here would fail the allocation and leave the connection open and unreachable.
         try {
-            this.autoCommitBaselines.put(connection, connection.isAutoCommit());
+            this.autoCommitBaselines.record(connection, connection.isAutoCommit());
         } catch (RuntimeException e) {
             logger.debug("Cannot read the auto-commit mode of a new connection; it is not restored on release", e);
         }
@@ -229,8 +225,8 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
     /**
      * The recorded auto-commit baselines, for tests.
      */
-    Map<Connection, Boolean> getAutoCommitBaselines() {
-        return Collections.unmodifiableMap(this.autoCommitBaselines);
+    AutoCommitBaselines getAutoCommitBaselines() {
+        return this.autoCommitBaselines;
     }
 
     private Mono<Connection> getValidConnection(Function<Connection, Mono<Void>> allocateValidation, Connection connection) {
@@ -338,7 +334,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                 .metricsRecorder(metricsRecorder)
                 .evictionPredicate(evictionPredicate)
                 .destroyHandler(connection -> {
-                    this.autoCommitBaselines.remove(connection);
+                    this.autoCommitBaselines.forget(connection);
                     return connection.close();
                 })
                 .idleResourceReuseMruOrder(); // MRU to support eviction of idle

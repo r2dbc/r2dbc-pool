@@ -1042,7 +1042,7 @@ final class ConnectionPoolUnitTests {
         pool.create().as(StepVerifier::create).expectNextCount(1).verifyComplete();
 
         assertThat(order).containsExactly("isAutoCommit", "Lifecycle.postAllocate", "postAllocate");
-        assertThat(pool.getAutoCommitBaselines()).containsEntry(connectionMock, true);
+        assertThat(pool.getAutoCommitBaselines().get(connectionMock)).isTrue();
     }
 
     /**
@@ -1070,7 +1070,7 @@ final class ConnectionPoolUnitTests {
 
         Mono.usingWhen(pool.create(), connection -> Mono.empty(), Connection::close).as(StepVerifier::create).verifyComplete();
 
-        assertThat(pool.getAutoCommitBaselines()).isEmpty();
+        assertThat(pool.getAutoCommitBaselines().size()).isZero();
         assertThat(poolMetrics.idleSize()).isEqualTo(1);
         verify(connectionMock, times(1)).isAutoCommit();
     }
@@ -1102,12 +1102,12 @@ final class ConnectionPoolUnitTests {
         PoolMetrics poolMetrics = pool.getMetrics().get();
 
         Mono.usingWhen(pool.create(), connection -> {
-            assertThat(pool.getAutoCommitBaselines()).containsEntry(connectionMock, true);
+            assertThat(pool.getAutoCommitBaselines().get(connectionMock)).isTrue();
             return Mono.empty();
         }, Connection::close).as(StepVerifier::create).verifyComplete();
 
         await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.allocatedSize() == 0);
-        assertThat(pool.getAutoCommitBaselines()).isEmpty();
+        assertThat(pool.getAutoCommitBaselines().size()).isZero();
         verify(connectionMock).close();
     }
 
