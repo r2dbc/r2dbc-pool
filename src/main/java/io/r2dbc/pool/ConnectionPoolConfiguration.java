@@ -353,6 +353,10 @@ public final class ConnectionPoolConfiguration {
 
         /**
          * Configure a customizer for {@link PoolBuilder} that constructs the {@link Connection} pool.
+         * <p>
+         * The pool records the auto-commit mode of each connection when it is created and restores it on release. Its
+         * destroy handler forgets that record; with a destroy handler that a customizer replaced, the record goes once the
+         * connection is no longer reachable.
          *
          * @param customizer customizer for {@link PoolBuilder} that creates the {@link Connection} pool, must not be {@code null}.
          * @return this {@link Builder}
