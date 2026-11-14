@@ -122,10 +122,11 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                             conn = prepareConnection(configuration, ref, connection, allocateValidation);
                         }
 
-                        return Operators.discardOnCancel(conn, () -> {
-                            ref.release().subscribe();
-                            return false;
-                        });
+                        // A cancel before the connection is delivered: its state is unknown while the preparation runs. A cancel
+                        // after it, from a subscriber that gave the connection up: one of its calls may still run in the driver.
+                        // Either way the connection is destroyed. The permit comes back when the destroy starts.
+                        return Operators.discardOnCancel(conn, () -> ref.invalidate().subscribe(null, e -> logger.warn("Invalidation after cancellation failed", e)),
+                                abandoned -> ((PooledConnection) abandoned).invalidate().subscribe(null, e -> logger.warn("Invalidation after cancellation failed", e)));
                     })
                     .name(acqName);
 

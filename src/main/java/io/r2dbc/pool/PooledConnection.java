@@ -33,6 +33,7 @@ import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.function.Function;
 
 /**
@@ -45,6 +46,8 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
 
     private static final Logger logger = Loggers.getLogger(PooledConnection.class);
 
+    private static final AtomicIntegerFieldUpdater<PooledConnection> RELEASING = AtomicIntegerFieldUpdater.newUpdater(PooledConnection.class, "releasing");
+
     private final PooledRef<Connection> ref;
 
     private final Connection connection;
@@ -54,6 +57,8 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     private volatile boolean closed = false;
 
     private volatile boolean inTransaction = false;
+
+    private volatile int releasing;
 
     PooledConnection(PooledRef<Connection> ref) {
         this(ref, null);
@@ -105,10 +110,36 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
         return Mono.from(this.connection.beginTransaction(definition)).doOnSubscribe(ignore -> this.inTransaction = true).doOnError(e -> this.inTransaction = false);
     }
 
+    /**
+     * Release the connection into the pool. Only the first subscription runs the release; every later subscription,
+     * also one of another call, completes at once without waiting for the first, as {@link io.r2dbc.spi.Closeable}
+     * asks. The connection rejects further use as soon as the release has started.
+     */
     @Override
     public Mono<Void> close() {
-        assertNotClosed();
-        return this.release;
+        return Mono.defer(() -> {
+            if (RELEASING.compareAndSet(this, 0, 1)) {
+                this.closed = true;
+                return this.release;
+            }
+            return Mono.empty();
+        });
+    }
+
+    /**
+     * Destroy the connection instead of releasing it into the pool, for a connection that its subscriber gave up. A call
+     * of that subscriber may still run in the driver, so neither a rollback nor any other cleanup can be trusted: a
+     * driver may decide on the rollback before the call has taken effect. Only the first of {@link #close()} and this
+     * method has an effect, and the connection rejects further use.
+     */
+    Mono<Void> invalidate() {
+        return Mono.defer(() -> {
+            if (RELEASING.compareAndSet(this, 0, 1)) {
+                this.closed = true;
+                return this.ref.invalidate();
+            }
+            return Mono.empty();
+        });
     }
 
     @Override

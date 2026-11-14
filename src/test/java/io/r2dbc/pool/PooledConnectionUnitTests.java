@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -241,6 +242,56 @@ class PooledConnectionUnitTests {
         connection.close().as(StepVerifier::create).verifyComplete();
 
         assertThat(order).containsExactly("preRelease", "preRelease.subscribe", "Lifecycle.preRelease", "Lifecycle.preRelease.subscribe");
+    }
+
+    /**
+     * What is to be tested: a connection that is closed twice.
+     * <p>
+     * How will the test case be deemed successful and why: both {@code close()} publishers complete, and the
+     * {@code preRelease} function, the rollback and the release into the pool each ran once. {@code Closeable} asks
+     * that a second close completes and has no effect.
+     * <p>
+     * Why is it important to test this test case: until now a second {@code close()} threw, and each subscription ran
+     * the whole release again (#221). The pool has to be able to close a connection that its subscriber closes as well
+     * (#211).
+     */
+    @Test
+    void closeTwiceShouldReleaseOnce() {
+
+        AtomicInteger preReleases = new AtomicInteger();
+        AtomicInteger rollbacks = new AtomicInteger();
+        AtomicInteger releases = new AtomicInteger();
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> rollbacks.incrementAndGet()));
+        when(pooledRefMock.release()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> releases.incrementAndGet()));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, c -> Mono.fromRunnable(preReleases::incrementAndGet));
+        connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+
+        connection.close().as(StepVerifier::create).verifyComplete();
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        assertThat(preReleases).hasValue(1);
+        assertThat(rollbacks).hasValue(1);
+        assertThat(releases).hasValue(1);
+    }
+
+    /**
+     * What is to be tested: using a connection after {@code close()} was subscribed.
+     * <p>
+     * How will the test case be deemed successful and why: {@code createStatement(…)} throws
+     * {@link IllegalStateException}. The connection belongs to the pool once its release has started.
+     * <p>
+     * Why is it important to test this test case: the connection is marked closed when the release starts, no longer
+     * when its cleanup is subscribed. Code that still holds it must fail fast instead of working on a connection that
+     * another borrower may already have.
+     */
+    @Test
+    void closedConnectionShouldRejectFurtherUse() {
+
+        PooledConnection connection = new PooledConnection(pooledRefMock);
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        assertThatThrownBy(() -> connection.createStatement("SELECT 1")).isInstanceOf(IllegalStateException.class);
     }
 
     interface ConnectionWithLifecycle extends Connection, Lifecycle {

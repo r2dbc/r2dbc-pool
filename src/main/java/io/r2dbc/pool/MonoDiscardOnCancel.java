@@ -24,47 +24,104 @@ import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
 import reactor.util.Logger;
 import reactor.util.Loggers;
+import reactor.util.annotation.Nullable;
 import reactor.util.context.Context;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.BooleanSupplier;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.function.Consumer;
 
 /**
- * A decorating operator that replays signals from its source to a {@link Subscriber} and drains the source upon {@link Subscription#cancel() cancel} and drops data signals until termination.
- * Draining data is required to complete a particular request/response window and clear the protocol state as client code expects to start a request/response conversation without any previous
- * response state.
+ * A decorating operator that replays signals from its source to a {@link Subscriber} and decides, on
+ * {@link Subscription#cancel() cancel}, who owns the value:
+ * <ul>
+ * <li>A cancel before the value: nobody has it. The source is cancelled, {@code onCancel} runs, and a value the source
+ * emits anyway is dropped: {@code onCancel} has taken care of it.</li>
+ * <li>A cancel from inside {@code onNext}, on the thread that delivers the value: the subscriber has taken the value and
+ * asked for no more, as {@code Flux.next()} does. The value is the subscriber's.</li>
+ * <li>Any other cancel after the value was delivered, or during the delivery from another thread: the subscriber gave
+ * the value up. {@code onAbandoned} runs with it.</li>
+ * </ul>
+ * Each callback runs at most once per subscription, and never both.
  */
 class MonoDiscardOnCancel<T> extends MonoOperator<T, T> {
 
     private static final Logger logger = Loggers.getLogger(MonoDiscardOnCancel.class);
 
-    private final BooleanSupplier cancelConsumer;
+    private final Runnable onCancel;
 
-    MonoDiscardOnCancel(Mono<? extends T> source, BooleanSupplier cancelConsumer) {
+    private final Consumer<? super T> onAbandoned;
+
+    MonoDiscardOnCancel(Mono<? extends T> source, Runnable onCancel, Consumer<? super T> onAbandoned) {
         super(source);
-        this.cancelConsumer = cancelConsumer;
+        this.onCancel = onCancel;
+        this.onAbandoned = onAbandoned;
     }
 
     @Override
     public void subscribe(CoreSubscriber<? super T> actual) {
-        this.source.subscribe(new MonoDiscardOnCancelSubscriber<>(actual, this.cancelConsumer));
+        this.source.subscribe(new MonoDiscardOnCancelSubscriber<>(actual, this.onCancel, this.onAbandoned));
     }
 
-    static class MonoDiscardOnCancelSubscriber<T> extends AtomicBoolean implements CoreSubscriber<T>, Subscription {
+    static class MonoDiscardOnCancelSubscriber<T> implements CoreSubscriber<T>, Subscription {
 
-        final CoreSubscriber<T> actual;
+        /**
+         * No value yet.
+         */
+        static final int ACTIVE = 0;
+
+        /**
+         * {@code actual.onNext} is running.
+         */
+        static final int EMITTING = 1;
+
+        /**
+         * The delivery has returned.
+         */
+        static final int EMITTED = 2;
+
+        /**
+         * The subscriber cancelled from inside the delivery and keeps the value.
+         */
+        static final int KEPT = 3;
+
+        /**
+         * Cancelled before the value.
+         */
+        static final int CANCELLED = 4;
+
+        /**
+         * Cancelled after the delivery; the value was handed to {@code onAbandoned}.
+         */
+        static final int RECLAIMED = 5;
+
+        @SuppressWarnings("rawtypes")
+        static final AtomicIntegerFieldUpdater<MonoDiscardOnCancelSubscriber> STATE = AtomicIntegerFieldUpdater.newUpdater(MonoDiscardOnCancelSubscriber.class, "state");
+
+        final CoreSubscriber<? super T> actual;
 
         final Context ctx;
 
-        final BooleanSupplier cancelConsumer;
+        final Runnable onCancel;
+
+        final Consumer<? super T> onAbandoned;
 
         Subscription s;
 
-        MonoDiscardOnCancelSubscriber(CoreSubscriber<T> actual, BooleanSupplier cancelConsumer) {
+        volatile int state;
+
+        // Written before the transition to EMITTING, read after it.
+        @Nullable
+        T value;
+
+        @Nullable
+        Thread deliveringThread;
+
+        MonoDiscardOnCancelSubscriber(CoreSubscriber<? super T> actual, Runnable onCancel, Consumer<? super T> onAbandoned) {
 
             this.actual = actual;
             this.ctx = actual.currentContext();
-            this.cancelConsumer = cancelConsumer;
+            this.onCancel = onCancel;
+            this.onAbandoned = onAbandoned;
         }
 
         @Override
@@ -84,24 +141,32 @@ class MonoDiscardOnCancel<T> extends MonoOperator<T, T> {
         @Override
         public void onNext(T t) {
 
-            if (this.get()) {
-                Operators.onDiscard(t, this.ctx);
+            if (this.state == CANCELLED) {
+                return;
+            }
+
+            this.value = t;
+            this.deliveringThread = Thread.currentThread();
+
+            if (!STATE.compareAndSet(this, ACTIVE, EMITTING)) {
+                // A cancel won the race; onCancel has taken care of the value.
                 return;
             }
 
             this.actual.onNext(t);
+            STATE.compareAndSet(this, EMITTING, EMITTED);
         }
 
         @Override
         public void onError(Throwable t) {
-            if (!this.get()) {
+            if (this.state != CANCELLED) {
                 this.actual.onError(t);
             }
         }
 
         @Override
         public void onComplete() {
-            if (!this.get()) {
+            if (this.state != CANCELLED) {
                 this.actual.onComplete();
             }
         }
@@ -114,20 +179,55 @@ class MonoDiscardOnCancel<T> extends MonoOperator<T, T> {
         @Override
         public void cancel() {
 
-            if (compareAndSet(false, true)) {
-                if (logger.isTraceEnabled()) {
-                    logger.trace("received cancel signal");
-                }
-                try {
-                    boolean mayCancelUpstream = this.cancelConsumer.getAsBoolean();
-                    if (mayCancelUpstream) {
+            for (; ; ) {
+
+                int state = this.state;
+
+                if (state == ACTIVE) {
+                    if (STATE.compareAndSet(this, ACTIVE, CANCELLED)) {
+                        if (logger.isTraceEnabled()) {
+                            logger.trace("received cancel signal before the value");
+                        }
+                        this.s.cancel();
+                        run(this.onCancel);
+                        return;
+                    }
+                } else if (state == EMITTING) {
+                    boolean fromDelivery = Thread.currentThread() == this.deliveringThread;
+                    if (STATE.compareAndSet(this, EMITTING, fromDelivery ? KEPT : RECLAIMED)) {
+                        if (!fromDelivery) {
+                            abandon();
+                        }
                         this.s.cancel();
                         return;
                     }
-                } catch (Exception e) {
-                    Operators.onErrorDropped(e, this.ctx);
+                } else if (state == EMITTED) {
+                    if (STATE.compareAndSet(this, EMITTED, RECLAIMED)) {
+                        abandon();
+                        this.s.cancel();
+                        return;
+                    }
+                } else {
+                    return;
                 }
-                this.s.request(Long.MAX_VALUE);
+            }
+        }
+
+        private void abandon() {
+
+            if (logger.isTraceEnabled()) {
+                logger.trace("received cancel signal after the value was delivered");
+            }
+
+            T value = this.value;
+            run(() -> this.onAbandoned.accept(value));
+        }
+
+        private void run(Runnable callback) {
+            try {
+                callback.run();
+            } catch (Exception e) {
+                Operators.onErrorDropped(e, this.ctx);
             }
         }
 
