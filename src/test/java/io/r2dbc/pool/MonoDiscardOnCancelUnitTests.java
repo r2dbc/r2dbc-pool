@@ -24,6 +24,7 @@ import reactor.test.publisher.TestPublisher;
 import reactor.test.util.RaceTestUtils;
 import reactor.util.context.Context;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -282,8 +283,9 @@ class MonoDiscardOnCancelUnitTests {
      * What is to be tested: the value and a cancel arriving at the same time, from two threads, 10 000 times.
      * <p>
      * How will the test case be deemed successful and why: in every round either {@code onCancel} ran and the value
-     * reached nobody, or the value reached the subscriber and {@code onAbandoned} ran at most once; never both
-     * callbacks. Whatever the order, the value has exactly one owner.
+     * reached nobody, or the value reached the subscriber and {@code onAbandoned} ran exactly once with it; never both
+     * callbacks. The cancel always comes from the other thread and always runs, so a delivered value must always be
+     * abandoned. Whatever the order, the value has exactly one owner.
      * <p>
      * Why is it important to test this test case: a cancel by a timeout races with the delivery of the connection. A
      * lost value leaks a slot; a value with two owners is a connection shared by two borrowers.
@@ -302,7 +304,7 @@ class MonoDiscardOnCancelUnitTests {
             RaceTestUtils.race(() -> source.next("connection"), subscriber::cancel);
 
             boolean cancelledBefore = this.cancels.get() == 1 && subscriber.values.isEmpty() && this.abandoned.isEmpty();
-            boolean delivered = this.cancels.get() == 0 && subscriber.values.size() == 1 && this.abandoned.size() <= 1;
+            boolean delivered = this.cancels.get() == 0 && subscriber.values.size() == 1 && this.abandoned.equals(Collections.singletonList("connection"));
 
             assertThat(cancelledBefore || delivered).as("round %d: cancels=%s, values=%s, abandoned=%s", i, this.cancels, subscriber.values, this.abandoned)
                 .isTrue();
