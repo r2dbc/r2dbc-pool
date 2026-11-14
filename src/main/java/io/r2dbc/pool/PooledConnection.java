@@ -21,6 +21,7 @@ import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionMetadata;
 import io.r2dbc.spi.IsolationLevel;
 import io.r2dbc.spi.Lifecycle;
+import io.r2dbc.spi.R2dbcTimeoutException;
 import io.r2dbc.spi.Statement;
 import io.r2dbc.spi.TransactionDefinition;
 import io.r2dbc.spi.ValidationDepth;
@@ -36,7 +37,9 @@ import java.time.Duration;
 import java.util.function.Function;
 
 /**
- * Pooled {@link Connection} implementation. Performs a cleanup on {@link #close()} if used transactionally.
+ * Pooled {@link Connection} implementation. Performs a cleanup on {@link #close()}: rolls back a transaction that was
+ * left open and restores the auto-commit mode the connection had when it was created. A failure of the cleanup, or of a
+ * {@code preRelease} function, invalidates the connection instead of returning it to the pool.
  * <p>
  *
  * @author Mark Paluch
@@ -51,6 +54,9 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
 
     private final Mono<Void> release;
 
+    @Nullable
+    private final Boolean autoCommitBaseline;
+
     private volatile boolean closed = false;
 
     private volatile boolean inTransaction = false;
@@ -60,21 +66,39 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     }
 
     PooledConnection(PooledRef<Connection> ref, @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease) {
+        this(ref, preRelease, null);
+    }
+
+    PooledConnection(PooledRef<Connection> ref, @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, @Nullable Boolean autoCommitBaseline) {
+        this(ref, preRelease, autoCommitBaseline, ConnectionPoolConfiguration.NO_TIMEOUT);
+    }
+
+    /**
+     * @param autoCommitBaseline the auto-commit mode the connection had when it was created, restored on release;
+     *                           {@code null} if unknown, in which case only an unfinished transaction is rolled back
+     * @param maxReleaseTime     the maximum time of the steps before the release into the pool; negative for no timeout
+     */
+    PooledConnection(PooledRef<Connection> ref, @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, @Nullable Boolean autoCommitBaseline,
+                     Duration maxReleaseTime) {
         this.ref = ref;
         this.connection = ref.poolable();
+        this.autoCommitBaseline = autoCommitBaseline;
         this.release = Mono.defer(() -> {
-            return Validation.validate(this, ValidationDepth.LOCAL).then(Mono.defer(() -> {
+
+            // Before the first step: a release that fails or times out in the validation leaves no usable connection.
+            this.closed = true;
+
+            Mono<Void> prepare = Validation.validate(this, ValidationDepth.LOCAL).then(Mono.defer(() -> {
 
                 Mono<Void> cleanup = null;
 
                 if (preRelease != null) {
-                    cleanup = Mono.from(preRelease.apply(this.connection)).onErrorResume(throwable -> handleCleanupError(throwable, ref));
+                    cleanup = Mono.from(preRelease.apply(this.connection));
                 }
 
-                if (this.inTransaction) {
-                    Mono<Void> rollback = rollbackTransaction().onErrorResume(throwable -> Mono.empty());
-                    cleanup = cleanup == null ? rollback : cleanup.then(rollback);
-                }
+                // Deferred, so that it sees the state the preRelease function left behind.
+                Mono<Void> reset = resetTransactionState();
+                cleanup = cleanup == null ? reset : cleanup.then(reset);
 
                 if (this.connection instanceof Lifecycle) {
 
@@ -82,15 +106,76 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
                     cleanup = cleanup == null ? lifecyclePreRelease : cleanup.then(lifecyclePreRelease);
                 }
 
-                return (cleanup == null ? Mono.empty() : cleanup).doOnSubscribe(ignore -> this.closed = true).then(this.ref.release());
-            })).onErrorResume(throwable -> handleCleanupError(throwable, ref)).doOnSubscribe(subscription -> logger.debug("Releasing connection"));
+                return cleanup;
+            }));
+
+            if (!maxReleaseTime.isNegative()) {
+                prepare = prepare.timeout(maxReleaseTime, Mono.error(() -> new ReleaseTimeoutException(String.format("Release timed out after %dms", maxReleaseTime.toMillis()))));
+            }
+
+            return prepare.then(this.ref.release()).onErrorResume(throwable -> handleCleanupError(throwable, ref)).doOnSubscribe(subscription -> logger.debug("Releasing connection"));
         });
+    }
+
+    /**
+     * Roll back a transaction that may be left open and restore the auto-commit mode the connection was created with.
+     * <p>
+     * A rollback runs if a transaction was begun and not committed, or if the connection is in manual-commit mode:
+     * manual-commit mode may hide a transaction the pool did not see begin, for example one that a statement of the
+     * borrower opened implicitly. The auto-commit mode is restored only after the rollback, because switching auto-commit
+     * on commits an open transaction, and it is read again after the rollback, because a call that still runs in the
+     * driver may have changed it in the meantime. An error stops the release, and the connection is invalidated.
+     */
+    private Mono<Void> resetTransactionState() {
+        return Mono.defer(() -> {
+
+            Boolean baseline = this.autoCommitBaseline;
+
+            if (baseline == null) {
+                // The mode is unknown: only a transaction the pool saw begin is rolled back.
+                return this.inTransaction ? rollbackTransaction() : Mono.empty();
+            }
+
+            if (this.inTransaction || !this.connection.isAutoCommit()) {
+                return rollbackTransaction().then(Mono.defer(() -> restoreAutoCommit(baseline)));
+            }
+
+            return restoreAutoCommit(baseline);
+        });
+    }
+
+    private Mono<Void> restoreAutoCommit(boolean baseline) {
+
+        if (this.connection.isAutoCommit() == baseline) {
+            return Mono.empty();
+        }
+
+        // The driver connection: this connection is already marked closed.
+        return Mono.from(this.connection.setAutoCommit(baseline));
     }
 
     private static Mono<Void> handleCleanupError(Throwable throwable, PooledRef<Connection> ref) {
 
-        logger.debug("Release failed", throwable);
+        logger.warn("Release failed, the connection is invalidated", throwable);
+
+        if (throwable instanceof ReleaseTimeoutException) {
+            // Do not wait for the destroy: a driver whose call hangs may not complete close() either. The pool gives the
+            // permit back when the destroy starts.
+            ref.invalidate().subscribe(null, e -> logger.debug("Invalidation after a release timeout failed", e));
+            return Mono.empty();
+        }
+
         return ref.invalidate();
+    }
+
+    /**
+     * Signals that the steps before the release took longer than {@code maxReleaseTime}.
+     */
+    static final class ReleaseTimeoutException extends R2dbcTimeoutException {
+
+        ReleaseTimeoutException(String reason) {
+            super(reason);
+        }
     }
 
     @Override

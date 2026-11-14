@@ -65,6 +65,7 @@ Mono<Object> resultMono = Mono.usingWhen(pooledConnectionFactory.create(),
 | `maxIdleTime`                | Maximum idle time of the connection in the pool. Negative values indicate no timeout. Defaults to `30` minutes.<br />This value is used as an interval for background eviction of idle connections unless configuring `backgroundEvictionInterval`.
 | `maxAcquireTime`             | Maximum time to acquire connection from pool. Negative values indicate no timeout. Defaults to no timeout.
 | `maxCreateConnectionTime`    | Maximum time to create a new connection. Negative values indicate no timeout. Defaults to no timeout.
+| `maxReleaseTime`             | Maximum time to prepare a connection for its release back into the pool. When it elapses, the connection is closed instead of released. It bounds the close of a connection that the pool destroys as well, so that a hanging close does not keep waiting borrowers from the freed slot. Negative values indicate no timeout. Defaults to no timeout.
 | `maxValidationTime`          | Maximum time to validate connection from pool. Negative values indicate no timeout. Defaults to no timeout.
 | `poolName`                   | Name of the Connection Pool.
 | `postAllocate`               | Lifecycle function to prepare a connection after allocating it.
@@ -108,7 +109,7 @@ pool.dispose();
 
 ## `Lifecycle` support
 
-The R2DBC specification defines as of version 0.9 lifecycle support for connections (`Lifecycle.postAllocate`, `Lifecycle.preRelease`). R2DBC Pool integrates with connections that implement lifecycle methods by inspecting the actual connection. `postAllocate` is called after allocating a connection and before returning it to the caller. `preRelease` is called upon `Connection.close()`, right before returning the connection into the pool. Any error signals in `postAllocate` are propagated to the allocation subscriber. Error signals of `preRelease` are logged and suppressed. In both cases, error signals lead to immediate invalidation of the connection.
+The R2DBC specification defines as of version 0.9 lifecycle support for connections (`Lifecycle.postAllocate`, `Lifecycle.preRelease`). R2DBC Pool integrates with connections that implement lifecycle methods by inspecting the actual connection. `postAllocate` is called after allocating a connection and before returning it to the caller. `preRelease` is called upon `Connection.close()`, right before returning the connection into the pool. Any error signals in `postAllocate` are propagated to the allocation subscriber. Error signals of `preRelease` are logged and suppressed. In both cases, error signals lead to immediate invalidation of the connection, and a failing `preRelease` stops the release.
 
 Additionally, the pool accepts custom `postAllocate` and `preRelease` functions through the builder to prepare the connection or to cleanup the connection before returning it into the pool. Custom lifecycle methods are called within the `Lifecycle` closure to ensure the connection-side lifecycle.
 
@@ -120,6 +121,16 @@ ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(
 
 ConnectionPool pool = new ConnectionPool(configuration);
 ```
+
+When a connection is closed, the pool runs these steps before it returns the connection into the pool:
+
+1. a local validation of the connection,
+2. the custom `preRelease` function, if configured,
+3. a rollback, if a transaction was begun through the pooled connection and not committed, or if the connection is in manual-commit mode, which may hide a transaction the pool did not see begin,
+4. a restore of the auto-commit mode the connection had when it was created, if it differs after the rollback,
+5. `Lifecycle.preRelease`.
+
+The pool records the auto-commit mode when the `ConnectionFactory` delivers a connection, before `postAllocate`. A `postAllocate` function that changes the mode for each borrower keeps working: the release switches back, the next acquisition switches again. If a step fails, the remaining steps are skipped and the connection is invalidated instead of returned. The error is logged at `WARN`, and the `close()` publisher completes.
 
 ### Maven configuration
 

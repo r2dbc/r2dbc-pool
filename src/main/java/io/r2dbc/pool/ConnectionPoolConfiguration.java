@@ -79,6 +79,8 @@ public final class ConnectionPoolConfiguration {
 
     private final Duration maxLifeTime;
 
+    private final Duration maxReleaseTime;
+
     private final Duration maxValidationTime;
 
     private final PoolMetricsRecorder metricsRecorder;
@@ -101,7 +103,7 @@ public final class ConnectionPoolConfiguration {
 
     private ConnectionPoolConfiguration(@Nullable Scheduler allocatorSubscribeOn, int acquireRetry, @Nullable Duration backgroundEvictionInterval, ConnectionFactory connectionFactory, Clock clock, Consumer<PoolBuilder<Connection, ?
             extends PoolConfig<? extends Connection>>> customizer, int initialSize, int maxSize, int minIdle, Duration maxAcquireTime, Duration maxCreateConnectionTime, Duration maxIdleTime,
-                                        Duration maxLifeTime, Duration maxValidationTime, PoolMetricsRecorder metricsRecorder, @Nullable String name,
+                                        Duration maxLifeTime, Duration maxReleaseTime, Duration maxValidationTime, PoolMetricsRecorder metricsRecorder, @Nullable String name,
                                         @Nullable Function<? super Connection, ? extends Publisher<Void>> postAllocate,
                                         @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, boolean registerJmx, ValidationDepth validationDepth,
                                         @Nullable String validationQuery) {
@@ -117,6 +119,7 @@ public final class ConnectionPoolConfiguration {
         this.maxAcquireTime = maxAcquireTime;
         this.maxCreateConnectionTime = maxCreateConnectionTime;
         this.maxLifeTime = maxLifeTime;
+        this.maxReleaseTime = maxReleaseTime;
         this.maxValidationTime = maxValidationTime;
         this.metricsRecorder = metricsRecorder;
         this.name = name;
@@ -201,6 +204,10 @@ public final class ConnectionPoolConfiguration {
         return this.maxLifeTime;
     }
 
+    Duration getMaxReleaseTime() {
+        return this.maxReleaseTime;
+    }
+
     Duration getMaxValidationTime() {
         return this.maxValidationTime;
     }
@@ -272,6 +279,8 @@ public final class ConnectionPoolConfiguration {
         private Duration maxIdleTime = Duration.ofMinutes(30);
 
         private Duration maxLifeTime = NO_TIMEOUT;  // negative value indicates no-timeout
+
+        private Duration maxReleaseTime = NO_TIMEOUT;  // negative value indicates no-timeout
 
         private Duration maxValidationTime = NO_TIMEOUT;  // negative value indicates no-timeout
 
@@ -353,6 +362,10 @@ public final class ConnectionPoolConfiguration {
 
         /**
          * Configure a customizer for {@link PoolBuilder} that constructs the {@link Connection} pool.
+         * <p>
+         * The pool records the auto-commit mode of each connection when it is created and restores it on release. Its
+         * destroy handler forgets that record; with a destroy handler that a customizer replaced, the record goes once the
+         * connection is no longer reachable.
          *
          * @param customizer customizer for {@link PoolBuilder} that creates the {@link Connection} pool, must not be {@code null}.
          * @return this {@link Builder}
@@ -458,6 +471,30 @@ public final class ConnectionPoolConfiguration {
          */
         public Builder maxLifeTime(Duration maxLifeTime) {
             this.maxLifeTime = applyDefault(maxLifeTime);
+            return this;
+        }
+
+        /**
+         * Configure {@link Duration timeout} for preparing a {@link Connection} for its release back into the pool: the local
+         * validation, the {@link #preRelease(Function) preRelease} function, the rollback and the restore of the auto-commit
+         * mode, and {@code Lifecycle.preRelease()}. When it elapses, the connection is invalidated instead of released, and
+         * {@link Connection#close()} completes without waiting for the connection to be destroyed. Default is no timeout.
+         * <p>
+         * The timeout bounds the driver's {@code close()} of a connection that the pool destroys as well. The pool counts
+         * the slot of a destroyed connection as free at once, but serves a borrower that already waits only once the close
+         * has completed; a close that hangs would keep that borrower waiting.
+         * <p>
+         * A call that the timeout cancels may go on inside the driver, and the connection is closed in a state the pool does
+         * not know. What the server does with a transaction that is still open at that point depends on the driver and the
+         * database.
+         *
+         * @param maxReleaseTime the maximum time to prepare a connection for its release. A negative or a {@code null} value
+         *                       results in not applying a timeout.
+         * @return this {@link Builder}
+         * @since 1.1
+         */
+        public Builder maxReleaseTime(@Nullable Duration maxReleaseTime) {
+            this.maxReleaseTime = applyDefault(maxReleaseTime);
             return this;
         }
 
@@ -594,7 +631,7 @@ public final class ConnectionPoolConfiguration {
             validate();
             return new ConnectionPoolConfiguration(this.allocatorSubscribeOn, this.acquireRetry, this.backgroundEvictionInterval, this.connectionFactory,
                     this.clock, this.customizer, this.initialSize, this.maxSize, this.minIdle,
-                    this.maxAcquireTime, this.maxCreateConnectionTime, this.maxIdleTime, this.maxLifeTime, this.maxValidationTime,
+                    this.maxAcquireTime, this.maxCreateConnectionTime, this.maxIdleTime, this.maxLifeTime, this.maxReleaseTime, this.maxValidationTime,
                     this.metricsRecorder, this.name, this.postAllocate, this.preRelease, this.registerJmx,
                     this.validationDepth, this.validationQuery
             );
@@ -645,6 +682,7 @@ public final class ConnectionPoolConfiguration {
                     ", maxCreateConnectionTime='" + this.maxCreateConnectionTime + '\'' +
                     ", maxIdleTime='" + this.maxIdleTime + '\'' +
                     ", maxLifeTime='" + this.maxLifeTime + '\'' +
+                    ", maxReleaseTime='" + this.maxReleaseTime + '\'' +
                     ", maxValidationTime='" + this.maxValidationTime + '\'' +
                     ", metricsRecorder='" + this.metricsRecorder + '\'' +
                     ", name='" + this.name + '\'' +
