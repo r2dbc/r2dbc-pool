@@ -126,6 +126,22 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
         });
     }
 
+    /**
+     * Destroy the connection instead of releasing it into the pool, for a connection that its subscriber gave up. A call
+     * of that subscriber may still run in the driver, so neither a rollback nor any other cleanup can be trusted: a
+     * driver may decide on the rollback before the call has taken effect. Only the first of {@link #close()} and this
+     * method has an effect, and the connection rejects further use.
+     */
+    Mono<Void> invalidate() {
+        return Mono.defer(() -> {
+            if (RELEASING.compareAndSet(this, 0, 1)) {
+                this.closed = true;
+                return this.ref.invalidate();
+            }
+            return Mono.empty();
+        });
+    }
+
     @Override
     public Mono<Void> commitTransaction() {
         assertNotClosed();

@@ -54,7 +54,7 @@ Consume the result of `create()` with `usingWhen`, as above. When the subscripti
 
 * A cancel before the delivery, while the pool still prepares the connection (`postAllocate`, validation), cancels the preparation and destroys the connection, whose state is unknown at that moment. This holds for a timeout by `maxAcquireTime` as well. The connection is not handed out again, and its slot is free at once.
 * A cancel from inside the delivery, on the thread that delivers the connection, as `Flux.next()`, `take(1)` or `awaitFirst()` send it, leaves the connection with the subscriber. The subscriber closes it.
-* Any other cancel after the delivery, for example of a `flatMap` that a timeout cancels while it works, means that the subscriber gave the connection up. The pool closes it, with the cleanup that `Connection.close()` runs.
+* Any other cancel after the delivery, for example of a `flatMap` that a timeout cancels while it works, means that the subscriber gave the connection up, possibly while one of its calls still runs in the driver. The pool destroys the connection instead of returning it: a rollback or any other cleanup subscribed at that moment may run before the call has taken effect, or be skipped by the driver.
 
 A `flatMap` whose mapper throws when it receives the connection cancels from inside the delivery as well, and then nobody closes the connection. `usingWhen` avoids that case.
 

@@ -21,7 +21,6 @@ import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
 import io.r2dbc.spi.IsolationLevel;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
 import reactor.core.Disposable;
@@ -31,6 +30,7 @@ import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -41,7 +41,7 @@ import static org.awaitility.Awaitility.await;
 /**
  * Regression tests for a cancel that reaches the pool after the connection was handed over, while the subscriber that
  * abandoned it still has a call in flight. They run a pool of one connection against
- * {@link TransactionalStateConnection}.
+ * {@link TransactionalStateConnection}, in both of its {@link TransactionalStateConnection.Semantics semantics}.
  */
 class ConnectionPoolCancellationUnitTests {
 
@@ -51,15 +51,116 @@ class ConnectionPoolCancellationUnitTests {
 
     ConnectionPool pool;
 
-    @BeforeEach
-    void setUp() {
+    @AfterEach
+    void tearDown() {
+        if (this.pool != null) {
+            this.pool.dispose();
+        }
+    }
+
+    /**
+     * What is to be tested: the shape of Spring's {@code R2dbcTransactionManager.doBegin}, which consumes the
+     * connection with {@code flatMap} and has no cancel handling, cancelled while the begin is in flight, on a driver
+     * that runs its calls strictly one after the other.
+     * <p>
+     * How will the test case be deemed successful and why: see {@link #assertCancelDuringBeginDoesNotPoison}.
+     * <p>
+     * Why is it important to test this test case: this is the cancel that leaves a connection with an open
+     * transaction in the first place (#211, spring-framework #36344). The subscriber never closes the connection, so
+     * the pool's reaction to the cancel is the only cleanup there is.
+     */
+    @Test
+    void cancelDuringBeginShouldNotPoisonASerialDriver() {
+        assertCancelDuringBeginDoesNotPoison(TransactionalStateConnection.Semantics.SERIAL);
+    }
+
+    /**
+     * What is to be tested: the same as {@link #cancelDuringBeginShouldNotPoisonASerialDriver()}, on a driver that
+     * decides on a rollback when it is subscribed, as r2dbc-postgresql does.
+     * <p>
+     * How will the test case be deemed successful and why: see {@link #assertCancelDuringBeginDoesNotPoison}.
+     * <p>
+     * Why is it important to test this test case: on such a driver a rollback subscribed while the begin is in flight
+     * sees no transaction and does nothing, and the begin opens one after it. A pool that cleans up and returns the
+     * connection hands that transaction to the next borrower; only destroying the connection avoids it.
+     */
+    @Test
+    void cancelDuringBeginShouldNotPoisonADriverThatDecidesOnSubscription() {
+        assertCancelDuringBeginDoesNotPoison(TransactionalStateConnection.Semantics.STATUS_AT_SUBSCRIPTION);
+    }
+
+    /**
+     * What is to be tested: that the slot of a connection abandoned by a cancelled begin comes back into the pool.
+     * <p>
+     * How will the test case be deemed successful and why: after the begin has run to its end, no connection is
+     * acquired, and the next acquisition gets a connection. The pool has then taken the slot back instead of leaving
+     * it with a subscriber that will never close the connection.
+     * <p>
+     * Why is it important to test this test case: the opposite fix, ignoring every cancel after the connection was
+     * handed over (#210), keeps such a slot acquired for good, and after {@code maxSize} cancels the pool is empty.
+     */
+    @Test
+    void cancelDuringBeginShouldNotLeakTheSlot() {
+
+        TransactionalStateConnection connection = warmup(TransactionalStateConnection.Semantics.SERIAL);
+        PoolMetrics metrics = this.pool.getMetrics().get();
+
+        cancelDuringBegin(connection).release();
+
+        await().atMost(TIMEOUT).until(() -> connection.calls().contains("beginTransaction"));
+        await().atMost(TIMEOUT).untilAsserted(() -> assertThat(metrics.acquiredSize()).as("acquired").isZero());
+        assertThatCode(this::transaction).doesNotThrowAnyException();
+    }
+
+    /**
+     * Cancel a begin in flight, let the begin run to its end, and check that
+     * <ul>
+     * <li>the abandoned connection is closed and was neither rolled back nor returned: a cleanup cannot be trusted
+     * while a call of the former owner still runs,</li>
+     * <li>no connection is acquired,</li>
+     * <li>ten transactions after it succeed, each on a connection that has no transaction open when it is handed
+     * out, and none on the abandoned connection.</li>
+     * </ul>
+     */
+    private void assertCancelDuringBeginDoesNotPoison(TransactionalStateConnection.Semantics semantics) {
+
+        TransactionalStateConnection connection = warmup(semantics);
+        PoolMetrics metrics = this.pool.getMetrics().get();
+
+        cancelDuringBegin(connection).release();
+
+        await().atMost(TIMEOUT).until(connection::isClosed);
+        assertThat(connection.calls()).as("calls of the abandoned connection").containsExactly("beginTransaction", "close");
+        await().atMost(TIMEOUT).untilAsserted(() -> assertThat(metrics.acquiredSize()).as("acquired").isZero());
+
+        for (int i = 1; i <= 10; i++) {
+
+            AtomicBoolean openWhenHandedOut = new AtomicBoolean();
+            AtomicReference<Connection> used = new AtomicReference<>();
+
+            assertThatCode(() -> borrow(c -> {
+                TransactionalStateConnection raw = (TransactionalStateConnection) ((PooledConnection) c).unwrap();
+                used.set(raw);
+                openWhenHandedOut.set(raw.isTransactionOpen());
+                return Mono.from(c.beginTransaction()).then(Mono.from(c.commitTransaction()));
+            })).as("transaction %d", i).doesNotThrowAnyException();
+
+            assertThat(openWhenHandedOut).as("transaction open when connection %d was handed out", i).isFalse();
+            assertThat(used.get()).as("connection of transaction %d", i).isNotSameAs(connection);
+        }
+    }
+
+    /**
+     * Create a pool of one connection of the given semantics, create the connection and return it while it is idle.
+     */
+    private TransactionalStateConnection warmup(TransactionalStateConnection.Semantics semantics) {
 
         ConnectionFactory connectionFactory = new ConnectionFactory() {
 
             @Override
             public Publisher<? extends Connection> create() {
                 return Mono.fromSupplier(() -> {
-                    TransactionalStateConnection connection = new TransactionalStateConnection();
+                    TransactionalStateConnection connection = new TransactionalStateConnection(semantics);
                     ConnectionPoolCancellationUnitTests.this.created.add(connection);
                     return connection;
                 });
@@ -72,74 +173,6 @@ class ConnectionPoolCancellationUnitTests {
         };
 
         this.pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactory).maxSize(1).build());
-    }
-
-    @AfterEach
-    void tearDown() {
-        this.pool.dispose();
-    }
-
-    /**
-     * What is to be tested: the shape of Spring's {@code R2dbcTransactionManager.doBegin}, which consumes the
-     * connection with {@code flatMap} and has no cancel handling, cancelled while the begin is in flight.
-     * <p>
-     * How will the test case be deemed successful and why: the connection is idle again only after a rollback ran;
-     * once the begin has run to its end no transaction is open; ten transactions after it succeed. Then the pool has
-     * taken the abandoned connection back through its release path, and the rollback ran behind the begin that was
-     * still in flight.
-     * <p>
-     * Why is it important to test this test case: this is the cancel that leaves a connection with an open
-     * transaction in the first place (#211, spring-framework #36344). The subscriber never closes the connection, so
-     * the pool's reaction to the cancel is the only cleanup there is.
-     */
-    @Test
-    void cancelDuringBeginShouldNotPoison() {
-
-        TransactionalStateConnection connection = warmup();
-        PoolMetrics metrics = this.pool.getMetrics().get();
-
-        cancelDuringBegin(connection).release();
-
-        await().atMost(TIMEOUT).until(() -> metrics.idleSize() == 1);
-        assertThat(connection.calls()).as("calls before the connection was idle again").containsSubsequence("beginTransaction", "rollbackTransaction");
-        assertThat(connection.isTransactionOpen()).as("transaction open after the cancelled begin has run").isFalse();
-
-        for (int i = 1; i <= 10; i++) {
-            assertThatCode(this::transaction).as("transaction %d", i).doesNotThrowAnyException();
-        }
-    }
-
-    /**
-     * What is to be tested: that the slot of a connection abandoned by a cancelled begin comes back into the pool.
-     * <p>
-     * How will the test case be deemed successful and why: after the begin has run to its end, no connection is
-     * acquired and one is idle. The pool has then taken the connection back instead of leaving it with a subscriber
-     * that will never close it.
-     * <p>
-     * Why is it important to test this test case: the opposite fix, ignoring every cancel after the connection was
-     * handed over (#210), keeps such a slot acquired for good, and after {@code maxSize} cancels the pool is empty.
-     * The test passes today and guards against that regression.
-     */
-    @Test
-    void cancelDuringBeginShouldNotLeakTheSlot() {
-
-        TransactionalStateConnection connection = warmup();
-        PoolMetrics metrics = this.pool.getMetrics().get();
-
-        cancelDuringBegin(connection).release();
-
-        await().atMost(TIMEOUT).until(() -> connection.calls().contains("beginTransaction"));
-        await().atMost(TIMEOUT).untilAsserted(() -> {
-            assertThat(metrics.acquiredSize()).as("acquired").isZero();
-            assertThat(metrics.idleSize()).as("idle").isOne();
-        });
-    }
-
-    /**
-     * Create the pool's only connection and return it while it is idle.
-     */
-    private TransactionalStateConnection warmup() {
-
         this.pool.warmup().block(TIMEOUT);
 
         assertThat(this.created).hasSize(1);

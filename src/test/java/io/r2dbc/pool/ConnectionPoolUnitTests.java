@@ -1209,15 +1209,16 @@ final class ConnectionPoolUnitTests {
      * What is to be tested: a subscriber that consumes the connection with {@code flatMap}, never closes it and is
      * cancelled after the hand-over, as Spring's {@code R2dbcTransactionManager.doBegin} is.
      * <p>
-     * How will the test case be deemed successful and why: the custom {@code preRelease} function and
-     * {@code Lifecycle.preRelease()} each ran once, and the connection is idle again. The pool has then taken the
-     * abandoned connection back through {@code close()}, with its full cleanup, instead of putting it back as it was.
+     * How will the test case be deemed successful and why: the connection is destroyed, its slot is free, and neither
+     * the custom {@code preRelease} function nor {@code Lifecycle.preRelease()} ran. A call of the subscriber may still
+     * run in the driver, so the pool neither cleans the connection up nor puts it back.
      * <p>
      * Why is it important to test this test case: until now the cancel returned the connection without cleanup, so a
-     * transaction the subscriber had begun went to the next borrower (#211, spring-framework #36344).
+     * transaction the subscriber had begun went to the next borrower (#211, spring-framework #36344). A cleanup
+     * subscribed while the begin is in flight does not help on every driver.
      */
     @Test
-    void cancelAfterHandOverShouldReleaseThroughClose() {
+    void cancelAfterHandOverShouldInvalidate() {
 
         AtomicInteger preReleases = new AtomicInteger();
         AtomicInteger lifecyclePreReleases = new AtomicInteger();
@@ -1229,17 +1230,17 @@ final class ConnectionPoolUnitTests {
 
         subscription.dispose();
 
-        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.idleSize() == 1);
-        assertThat(preReleases).hasValue(1);
-        assertThat(lifecyclePreReleases).hasValue(1);
+        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.allocatedSize() == 0);
+        assertThat(preReleases).hasValue(0);
+        assertThat(lifecyclePreReleases).hasValue(0);
     }
 
     /**
      * What is to be tested: a subscriber that closes the connection after the pool has taken it back on a cancel.
      * <p>
-     * How will the test case be deemed successful and why: the late {@code close()} completes, and the
-     * {@code preRelease} function still ran only once. The first close released the connection; the second has no
-     * effect.
+     * How will the test case be deemed successful and why: the late {@code close()} completes, the
+     * {@code preRelease} function never ran, and the destroyed connection is not released. The cancel destroyed the
+     * connection; the close after it has no effect.
      * <p>
      * Why is it important to test this test case: a subscriber may close in its own cleanup after the cancel. That
      * must neither fail nor release the connection a second time while another borrower may already have it.
@@ -1259,11 +1260,11 @@ final class ConnectionPoolUnitTests {
         await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.acquiredSize() == 1);
 
         subscription.dispose();
-        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.idleSize() == 1);
+        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.allocatedSize() == 0);
 
         Mono.from(abandoned.get().close()).as(StepVerifier::create).verifyComplete();
-        assertThat(preReleases).hasValue(1);
-        assertThat(poolMetrics.idleSize()).isEqualTo(1);
+        assertThat(preReleases).hasValue(0);
+        assertThat(poolMetrics.allocatedSize()).isZero();
     }
 
     /**
@@ -1568,6 +1569,7 @@ final class ConnectionPoolUnitTests {
         when(connectionMock.validate(any())).thenReturn(Mono.just(true));
         when(connectionMock.postAllocate()).thenReturn(Mono.empty());
         when(connectionMock.preRelease()).thenReturn(Mono.fromRunnable(lifecyclePreReleases::incrementAndGet));
+        when(connectionMock.close()).thenReturn(Mono.empty());
 
         return new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxSize(1)
                 .preRelease(connection -> Mono.fromRunnable(preReleases::incrementAndGet))
