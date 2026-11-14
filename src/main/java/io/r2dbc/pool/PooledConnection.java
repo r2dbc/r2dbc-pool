@@ -83,8 +83,11 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
         this.ref = ref;
         this.connection = ref.poolable();
         this.autoCommitBaseline = autoCommitBaseline;
-        String timeoutMessage = String.format("Release timed out after %dms", maxReleaseTime.toMillis());
         this.release = Mono.defer(() -> {
+
+            // Before the first step: a release that fails or times out in the validation leaves no usable connection.
+            this.closed = true;
+
             Mono<Void> prepare = Validation.validate(this, ValidationDepth.LOCAL).then(Mono.defer(() -> {
 
                 Mono<Void> cleanup = null;
@@ -103,11 +106,11 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
                     cleanup = cleanup == null ? lifecyclePreRelease : cleanup.then(lifecyclePreRelease);
                 }
 
-                return cleanup.doOnSubscribe(ignore -> this.closed = true);
+                return cleanup;
             }));
 
             if (!maxReleaseTime.isNegative()) {
-                prepare = prepare.timeout(maxReleaseTime, Mono.error(() -> new ReleaseTimeoutException(timeoutMessage)));
+                prepare = prepare.timeout(maxReleaseTime, Mono.error(() -> new ReleaseTimeoutException(String.format("Release timed out after %dms", maxReleaseTime.toMillis()))));
             }
 
             return prepare.then(this.ref.release()).onErrorResume(throwable -> handleCleanupError(throwable, ref)).doOnSubscribe(subscription -> logger.debug("Releasing connection"));

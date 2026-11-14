@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
@@ -471,6 +472,31 @@ class PooledConnectionUnitTests {
         StepVerifier.withVirtualTime(connection::close).expectSubscription().thenAwait(Duration.ofSeconds(2)).expectComplete().verify(Duration.ofSeconds(5));
 
         assertThat(invalidationStarted).isTrue();
+    }
+
+    /**
+     * What is to be tested: a release whose local validation never answers, with {@code maxReleaseTime} set.
+     * <p>
+     * How will the test case be deemed successful and why: {@code close()} completes after the timeout, the connection
+     * is invalidated, and a further call on it fails with {@link IllegalStateException}. The connection is marked
+     * closed when the release starts, not only when the cleanup after the validation begins.
+     * <p>
+     * Why is it important to test this test case: otherwise the borrower could go on using a connection that the pool
+     * has already destroyed, and a second {@code close()} would run the release again.
+     */
+    @Test
+    void timeoutInValidationShouldCloseTheConnection() {
+
+        AtomicBoolean invalidated = new AtomicBoolean();
+        when(pooledRefMock.invalidate()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> invalidated.set(true)));
+        when(connectionMock.validate(ValidationDepth.LOCAL)).thenReturn(Mono.never());
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, null, Duration.ofSeconds(2));
+
+        StepVerifier.withVirtualTime(connection::close).expectSubscription().thenAwait(Duration.ofSeconds(2)).expectComplete().verify(Duration.ofSeconds(5));
+
+        assertThat(invalidated).isTrue();
+        assertThatThrownBy(() -> connection.createStatement("SELECT 1")).isInstanceOf(IllegalStateException.class);
     }
 
     /**
