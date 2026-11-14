@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -260,6 +261,34 @@ class PooledConnectionUnitTests {
 
         verify(connectionMock).rollbackTransaction();
         assertThat(rollbackCalled).isTrue();
+    }
+
+    /**
+     * What is to be tested: that {@link PooledConnection#close()} rolls back after a {@code rollbackTransaction()} of the
+     * borrower failed.
+     * <p>
+     * How will the test case be deemed successful and why: the driver's {@code rollbackTransaction()} is called a
+     * second time by the release. A failed rollback says nothing about whether the transaction ended, so the flag has to
+     * stay set.
+     * <p>
+     * Why is it important to test this test case: the rollback cleared the flag on subscription, as the commit did
+     * before #228, so a failed rollback returned the connection with its transaction open.
+     */
+    @Test
+    void failedRollbackShouldRollbackOnClose() {
+
+        AtomicInteger rollbacks = new AtomicInteger();
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.error(new RuntimeException("rollback failed")),
+            Mono.<Void>empty().doOnSuccess(o -> rollbacks.incrementAndGet()));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock);
+        connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+        connection.rollbackTransaction().as(StepVerifier::create).verifyError();
+
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        verify(connectionMock, times(2)).rollbackTransaction();
+        assertThat(rollbacks).hasValue(1);
     }
 
     @Test

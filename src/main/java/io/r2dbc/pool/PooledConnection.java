@@ -163,7 +163,8 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
 
     @Override
     public Mono<Void> rollbackTransaction() {
-        return Mono.from(this.connection.rollbackTransaction()).doOnSubscribe(ignore -> this.inTransaction = false);
+        // Cleared only after a successful rollback: after a failed one the transaction may still be open.
+        return Mono.from(this.connection.rollbackTransaction()).doOnSuccess(ignore -> this.inTransaction = false);
     }
 
     @Override
