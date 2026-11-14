@@ -30,6 +30,8 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
+import reactor.test.publisher.TestPublisher;
+import reactor.test.util.RaceTestUtils;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -1054,52 +1056,73 @@ final class ConnectionPoolUnitTests {
         assertThat(order).containsExactly("Lifecycle.postAllocate", "Lifecycle.postAllocate.subscribe", "postAllocate", "postAllocate.subscribe");
     }
 
+    /**
+     * What is to be tested: a cancel while the pool prepares a connection, after {@code Lifecycle.postAllocate()} and
+     * during the validation.
+     * <p>
+     * How will the test case be deemed successful and why: the validation is cancelled, the connection is closed once,
+     * and no connection stays acquired. The connection's state is unknown in the middle of its preparation, so the pool
+     * destroys it instead of returning it.
+     * <p>
+     * Why is it important to test this test case: this test pinned the opposite until #232 (it let the preparation
+     * finish and returned the connection, since #140). The drain kept the protocol state consistent for a connection
+     * that went back into the pool; a destroyed connection has no next borrower, and a validation that hangs no longer
+     * keeps the connection in rotation.
+     */
     @Test
-    void cancelDuringAllocationShouldCompleteAtomically() throws InterruptedException {
+    void cancelDuringAllocationShouldCancelPreparation() throws InterruptedException {
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
 
         CountDownLatch prepareLatch = new CountDownLatch(1);
-        CountDownLatch validateLatch = new CountDownLatch(1);
-        AtomicBoolean seenCancel = new AtomicBoolean();
-        Mono<Void> prepare = Mono.<Void>empty().delayElement(Duration.ofMillis(100)).doOnSuccess(s -> prepareLatch.countDown()).doOnCancel(() -> {
-            seenCancel.set(true);
-        });
-        Mono<Boolean> validate = Mono.just(true).delayElement(Duration.ofMillis(250)).doOnSuccess(s -> validateLatch.countDown()).doOnCancel(() -> {
-            seenCancel.set(true);
-        });
+        AtomicBoolean validationCancelled = new AtomicBoolean();
+        AtomicInteger closes = new AtomicInteger();
+        Mono<Void> prepare = Mono.<Void>empty().delayElement(Duration.ofMillis(100)).doOnSuccess(s -> prepareLatch.countDown());
+        Mono<Boolean> validate = Mono.just(true).delayElement(Duration.ofMillis(250)).doOnCancel(() -> validationCancelled.set(true));
 
         when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
         when(connectionMock.validate(any())).thenReturn(validate);
         when(connectionMock.postAllocate()).thenReturn(prepare);
+        when(connectionMock.close()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> closes.incrementAndGet()));
 
         ConnectionPoolConfiguration configuration = ConnectionPoolConfiguration.builder(connectionFactoryMock)
                 .build();
 
         ConnectionPool pool = new ConnectionPool(configuration);
         Disposable subscribe = pool.create().subscribe();
-        prepareLatch.await();
+        assertThat(prepareLatch.await(2, TimeUnit.SECONDS)).isTrue();
         subscribe.dispose();
-        validateLatch.await();
 
         PoolMetrics poolMetrics = pool.getMetrics().get();
-        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.idleSize() == 10);
+        await().atMost(Duration.ofSeconds(2)).until(() -> closes.get() == 1);
 
-        assertThat(seenCancel).isFalse();
+        assertThat(validationCancelled).isTrue();
         assertThat(poolMetrics.pendingAcquireSize()).isEqualTo(0);
-        assertThat(poolMetrics.allocatedSize()).isEqualTo(10);
-        assertThat(poolMetrics.idleSize()).isEqualTo(10);
+        assertThat(poolMetrics.acquiredSize()).isEqualTo(0);
+        assertThat(closes).hasValue(1);
     }
 
+    /**
+     * What is to be tested: a cancel by {@code maxAcquireTime} while the validation of a new connection has not
+     * answered, followed by a late answer of that validation.
+     * <p>
+     * How will the test case be deemed successful and why: the connection is closed, nothing stays allocated, and the
+     * late answer changes nothing. The pool destroyed the connection at the cancel instead of returning it after the
+     * validation, so nobody can pick it while the validation still runs.
+     * <p>
+     * Why is it important to test this test case: until now the connection went back into the pool at once while its
+     * validation was still running, and MRU order picked the unresponsive connection again (#232).
+     */
     @Test
-    void cancelDuringAllocationShouldReleaseConnection() {
+    void cancelDuringAllocationShouldInvalidateConnection() {
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
+        AtomicInteger closes = new AtomicInteger();
 
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock));
-        when(connectionMock.validate(any())).thenReturn(Mono.just(true));
+        when(connectionMock.close()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> closes.incrementAndGet()));
 
         AtomicReference<Subscriber<? super Boolean>> subRef = new AtomicReference<>();
         Subscription subscription = new Subscription() {
@@ -1128,15 +1151,15 @@ final class ConnectionPoolUnitTests {
 
         assertThatExceptionOfType(CompletionException.class).isThrownBy(future::join);
 
+        PoolMetrics poolMetrics = pool.getMetrics().get();
+        await().atMost(Duration.ofSeconds(2)).until(() -> closes.get() == 1 && poolMetrics.allocatedSize() == 0);
+
         subRef.get().onNext(true);
         subRef.get().onComplete();
 
-        PoolMetrics poolMetrics = pool.getMetrics().get();
-        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.idleSize() == 1);
-
-        assertThat(poolMetrics.pendingAcquireSize()).isEqualTo(0);
-        assertThat(poolMetrics.allocatedSize()).isEqualTo(1);
-        assertThat(poolMetrics.idleSize()).isEqualTo(1);
+        assertThat(poolMetrics.allocatedSize()).isEqualTo(0);
+        assertThat(poolMetrics.idleSize()).isEqualTo(0);
+        assertThat(closes).hasValue(1);
     }
 
     @Test
@@ -1362,6 +1385,178 @@ final class ConnectionPoolUnitTests {
         }).as(StepVerifier::create).verifyError(IllegalStateException.class);
 
         assertThat(poolMetrics.acquiredSize()).isEqualTo(1);
+    }
+
+    /**
+     * What is to be tested: a subscriber that is cancelled while {@code Lifecycle.postAllocate()} runs.
+     * <p>
+     * How will the test case be deemed successful and why: {@code postAllocate} is cancelled, the connection is closed,
+     * nothing stays acquired or allocated, and neither the custom {@code preRelease} function nor
+     * {@code Lifecycle.preRelease()} runs. The connection is destroyed, not released, so there is nothing to prepare
+     * for a next borrower.
+     * <p>
+     * Why is it important to test this test case: until now the connection went back into the pool at once while its
+     * preparation still ran on it, and another subscriber could acquire it in the meantime.
+     */
+    @Test
+    void cancelDuringPostAllocateShouldInvalidate() {
+
+        AtomicInteger preReleases = new AtomicInteger();
+        AtomicInteger lifecyclePreReleases = new AtomicInteger();
+        AtomicBoolean postAllocateCancelled = new AtomicBoolean();
+        AtomicInteger closes = new AtomicInteger();
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.just(true));
+        when(connectionMock.postAllocate()).thenReturn(Mono.<Void>never().doOnCancel(() -> postAllocateCancelled.set(true)));
+        when(connectionMock.preRelease()).thenReturn(Mono.fromRunnable(lifecyclePreReleases::incrementAndGet));
+        when(connectionMock.close()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> closes.incrementAndGet()));
+
+        ConnectionPool pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxSize(1)
+                .preRelease(connection -> Mono.fromRunnable(preReleases::incrementAndGet))
+                .build());
+        PoolMetrics poolMetrics = pool.getMetrics().get();
+
+        Disposable subscription = pool.create().subscribe();
+        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.acquiredSize() == 1);
+
+        subscription.dispose();
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> closes.get() == 1);
+        assertThat(postAllocateCancelled).isTrue();
+        assertThat(poolMetrics.acquiredSize()).isEqualTo(0);
+        assertThat(poolMetrics.allocatedSize()).isEqualTo(0);
+        assertThat(preReleases).hasValue(0);
+        assertThat(lifecyclePreReleases).hasValue(0);
+    }
+
+    /**
+     * What is to be tested: a cancel that arrives while {@code postAllocate} fails, from two threads at once, 100 times.
+     * <p>
+     * How will the test case be deemed successful and why: in every round the connection is closed exactly once. The
+     * cancel and the failed preparation both invalidate the connection, and the pool destroys a connection once.
+     * <p>
+     * Why is it important to test this test case: two paths now invalidate a connection that is being prepared. Two
+     * destroys would close the connection twice and could count the permit back twice.
+     */
+    @Test
+    void cancelRacingPreparationFailureShouldDestroyOnce() {
+
+        for (int i = 0; i < 100; i++) {
+
+            AtomicInteger closes = new AtomicInteger();
+            TestPublisher<Void> postAllocate = TestPublisher.createNoncompliant(TestPublisher.Violation.DEFER_CANCELLATION);
+
+            ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+            ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
+
+            when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+            when(connectionMock.validate(any())).thenReturn(Mono.just(true));
+            when(connectionMock.postAllocate()).thenReturn(postAllocate);
+            when(connectionMock.close()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> closes.incrementAndGet()));
+
+            ConnectionPool pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxSize(1).acquireRetry(0).build());
+            PoolMetrics poolMetrics = pool.getMetrics().get();
+
+            Disposable subscription = pool.create().subscribe(ignore -> {
+            }, ignore -> {
+            });
+            await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.acquiredSize() == 1);
+
+            RaceTestUtils.race(() -> postAllocate.error(new IllegalStateException("postAllocate failed")), subscription::dispose);
+
+            await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.allocatedSize() == 0);
+            assertThat(closes).as("closes in round %d", i).hasValue(1);
+
+            pool.dispose();
+        }
+    }
+
+    /**
+     * What is to be tested: a subscriber that gives up while the validation of its connection never answers, with no
+     * {@code maxAcquireTime} and a driver whose {@code close()} never completes either.
+     * <p>
+     * How will the test case be deemed successful and why: the slot is free after the cancel, and on a pool of one a
+     * second {@code create()} gets a new connection. The pool destroyed the hanging connection at the cancel, and the
+     * permit comes back when the destroy starts, not when {@code close()} completes.
+     * <p>
+     * Why is it important to test this test case: without a timeout configured, nothing else bounds the preparation.
+     * Had the pool waited for it, the slot would have stayed acquired for good.
+     */
+    @Test
+    void hangingValidationShouldFreeTheSlotOnCancel() {
+
+        Connection stalled = mock(Connection.class);
+        when(stalled.validate(any())).thenReturn(Mono.never());
+        when(stalled.close()).thenReturn(Mono.never());
+
+        Connection healthy = mock(Connection.class);
+        when(healthy.validate(any())).thenReturn(Mono.just(true));
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        // The pool subscribes to the publisher of create() once per new connection.
+        AtomicInteger created = new AtomicInteger();
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.fromSupplier(() -> created.getAndIncrement() == 0 ? stalled : healthy));
+
+        ConnectionPool pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxSize(1).build());
+        PoolMetrics poolMetrics = pool.getMetrics().get();
+
+        Disposable subscription = pool.create().subscribe();
+        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.acquiredSize() == 1);
+
+        subscription.dispose();
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.acquiredSize() == 0);
+        verify(stalled).close();
+        Mono.usingWhen(pool.create(), connection -> Mono.just(((PooledConnection) connection).unwrap()), Connection::close)
+            .as(StepVerifier::create)
+            .expectNext(healthy)
+            .expectComplete()
+            .verify(Duration.ofSeconds(2));
+    }
+
+    /**
+     * What is to be tested: the scenario of #232: {@code maxAcquireTime} elapses while the validation of the
+     * connection does not answer.
+     * <p>
+     * How will the test case be deemed successful and why: the first acquisition fails with the timeout, the
+     * connection is closed, and the next acquisition gets another connection. The unresponsive connection is not
+     * picked again.
+     * <p>
+     * Why is it important to test this test case: until now the timeout returned the unresponsive connection into the
+     * pool, MRU order picked it for the next acquisition, and every acquisition timed out on the same connection while
+     * a healthy one was never tried.
+     */
+    @Test
+    void hangingValidationShouldNotBePickedAgain() {
+
+        Connection stalled = mock(Connection.class);
+        when(stalled.validate(any())).thenReturn(Mono.never());
+        when(stalled.close()).thenReturn(Mono.empty());
+
+        Connection healthy = mock(Connection.class);
+        when(healthy.validate(any())).thenReturn(Mono.just(true));
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        // The pool subscribes to the publisher of create() once per new connection.
+        AtomicInteger created = new AtomicInteger();
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.fromSupplier(() -> created.getAndIncrement() == 0 ? stalled : healthy));
+
+        ConnectionPool pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxSize(1)
+                .maxAcquireTime(Duration.ofMillis(100)).acquireRetry(0)
+                .build());
+
+        pool.create().as(StepVerifier::create).expectError(R2dbcTimeoutException.class).verify(Duration.ofSeconds(2));
+
+        await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> verify(stalled).close());
+        Mono.usingWhen(pool.create(), connection -> Mono.just(((PooledConnection) connection).unwrap()), Connection::close)
+            .as(StepVerifier::create)
+            .expectNext(healthy)
+            .expectComplete()
+            .verify(Duration.ofSeconds(2));
     }
 
     private ConnectionPool createPoolForCancelTest(AtomicInteger preReleases, AtomicInteger lifecyclePreReleases) {

@@ -35,7 +35,7 @@ final class Operators {
      * Replay signals from {@link Mono the source} until cancellation, and decide on {@link Subscription#cancel() cancel}
      * who owns the value.
      * <p>
-     * A cancel before the value drains the source, discards a late value and runs {@code onCancel}. A cancel from inside
+     * A cancel before the value cancels the source, runs {@code onCancel} and drops a late value. A cancel from inside
      * the delivery, on the delivering thread, leaves the value with the subscriber. Any other cancel after the value was
      * delivered passes the value to {@code onAbandoned}. Each callback runs at most once per subscription, and never
      * both; an exception from a callback is dropped through {@code Operators.onErrorDropped}.

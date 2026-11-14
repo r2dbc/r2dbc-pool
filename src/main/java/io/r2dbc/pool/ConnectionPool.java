@@ -122,7 +122,9 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
                             conn = prepareConnection(configuration, ref, connection, allocateValidation);
                         }
 
-                        return Operators.discardOnCancel(conn, () -> ref.release().subscribe(),
+                        // A cancel before the connection is delivered: its state is unknown while the preparation runs, so it
+                        // is destroyed. The permit comes back when the destroy starts, also if close() hangs.
+                        return Operators.discardOnCancel(conn, () -> ref.invalidate().subscribe(null, e -> logger.warn("Invalidation after cancellation failed", e)),
                                 abandoned -> Mono.from(abandoned.close()).subscribe(null, e -> logger.warn("Release after cancellation failed", e)));
                     })
                     .name(acqName);

@@ -70,27 +70,28 @@ class MonoDiscardOnCancelUnitTests {
     /**
      * What is to be tested: a cancel before the source emitted its value.
      * <p>
-     * How will the test case be deemed successful and why: {@code onCancel} runs once, the source is not cancelled but
-     * drained, and the value it emits later reaches neither the subscriber nor {@code onAbandoned}; it is discarded.
-     * Nobody owns the value at that point, so the callback for a cancel before the value is responsible for it.
+     * How will the test case be deemed successful and why: {@code onCancel} runs once, the source is cancelled, and a
+     * value the source emits anyway reaches neither the subscriber, nor {@code onAbandoned}, nor a discard hook.
+     * Nobody owns the value at that point, and {@code onCancel} has already taken care of it; any further reaction
+     * would act on a connection that is being destroyed.
      * <p>
-     * Why is it important to test this test case: this is a cancel during the preparation of a connection. The value
-     * must not be handed to a subscriber that is gone, and it must not be released twice.
+     * Why is it important to test this test case: this is a cancel during the preparation of a connection. The pool
+     * destroys the connection instead of letting the preparation run on (#232).
      */
     @Test
     void cancelBeforeValueShouldRunOnCancel() {
 
-        TestPublisher<String> source = TestPublisher.create();
+        TestPublisher<String> source = TestPublisher.createNoncompliant(TestPublisher.Violation.DEFER_CANCELLATION);
         RecordingSubscriber subscriber = subscribe(source);
 
         subscriber.cancel();
         source.next("connection");
 
         assertThat(this.cancels).hasValue(1);
-        assertThat(source.wasCancelled()).as("source cancelled").isFalse();
+        assertThat(source.wasCancelled()).as("source cancelled").isTrue();
         assertThat(subscriber.values).isEmpty();
         assertThat(this.abandoned).isEmpty();
-        assertThat(this.discarded).containsExactly("connection");
+        assertThat(this.discarded).isEmpty();
     }
 
     /**
@@ -234,7 +235,7 @@ class MonoDiscardOnCancelUnitTests {
     @Test
     void cancelThenErrorShouldBeDropped() {
 
-        TestPublisher<String> source = TestPublisher.create();
+        TestPublisher<String> source = TestPublisher.createNoncompliant(TestPublisher.Violation.DEFER_CANCELLATION);
         RecordingSubscriber subscriber = subscribe(source);
 
         subscriber.cancel();

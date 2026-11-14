@@ -34,9 +34,8 @@ import java.util.function.Consumer;
  * A decorating operator that replays signals from its source to a {@link Subscriber} and decides, on
  * {@link Subscription#cancel() cancel}, who owns the value:
  * <ul>
- * <li>A cancel before the value: nobody has it. The source is drained, a late value is discarded, and {@code onCancel}
- * runs. Draining completes a request/response window and clears the protocol state, as client code expects to start a
- * request/response conversation without any previous response state.</li>
+ * <li>A cancel before the value: nobody has it. The source is cancelled, {@code onCancel} runs, and a value the source
+ * emits anyway is dropped: {@code onCancel} has taken care of it.</li>
  * <li>A cancel from inside {@code onNext}, on the thread that delivers the value: the subscriber has taken the value and
  * asked for no more, as {@code Flux.next()} does. The value is the subscriber's.</li>
  * <li>Any other cancel after the value was delivered, or during the delivery from another thread: the subscriber gave
@@ -143,7 +142,6 @@ class MonoDiscardOnCancel<T> extends MonoOperator<T, T> {
         public void onNext(T t) {
 
             if (this.state == CANCELLED) {
-                Operators.onDiscard(t, this.ctx);
                 return;
             }
 
@@ -151,8 +149,7 @@ class MonoDiscardOnCancel<T> extends MonoOperator<T, T> {
             this.deliveringThread = Thread.currentThread();
 
             if (!STATE.compareAndSet(this, ACTIVE, EMITTING)) {
-                // A cancel won the race and nobody has the value.
-                Operators.onDiscard(t, this.ctx);
+                // A cancel won the race; onCancel has taken care of the value.
                 return;
             }
 
@@ -191,8 +188,8 @@ class MonoDiscardOnCancel<T> extends MonoOperator<T, T> {
                         if (logger.isTraceEnabled()) {
                             logger.trace("received cancel signal before the value");
                         }
+                        this.s.cancel();
                         run(this.onCancel);
-                        this.s.request(Long.MAX_VALUE);
                         return;
                     }
                 } else if (state == EMITTING) {
