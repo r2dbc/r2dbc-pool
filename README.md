@@ -125,8 +125,8 @@ When a connection is closed, the pool runs these steps before it returns the con
 
 1. a local validation of the connection,
 2. the custom `preRelease` function, if configured,
-3. a rollback, if a transaction was begun through the pooled connection and not committed, or if the connection is in manual-commit mode although it was created in auto-commit mode,
-4. a restore of the auto-commit mode the connection had when it was created, if it differs,
+3. a rollback, if a transaction was begun through the pooled connection and not committed, or if the connection is in manual-commit mode, which may hide a transaction the pool did not see begin,
+4. a restore of the auto-commit mode the connection had when it was created, if it differs after the rollback,
 5. `Lifecycle.preRelease`.
 
 The pool records the auto-commit mode when the `ConnectionFactory` delivers a connection, before `postAllocate`. A `postAllocate` function that changes the mode for each borrower keeps working: the release switches back, the next acquisition switches again. If a step fails, the remaining steps are skipped and the connection is invalidated instead of returned. The error is logged at `DEBUG`, and the `close()` publisher completes.

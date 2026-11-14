@@ -271,6 +271,7 @@ final class ConnectionPoolUnitTests {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
         when(connectionMock.validate(any())).thenReturn(Mono.empty());
+        when(connectionMock.isAutoCommit()).thenReturn(true);
         AtomicLong createCounter = new AtomicLong();
         when(connectionFactoryMock.create()).thenReturn((Publisher) Mono.just(connectionMock).doOnSubscribe(ignore -> createCounter.incrementAndGet()));
 
@@ -458,6 +459,7 @@ final class ConnectionPoolUnitTests {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
         when(connectionMock.validate(any())).thenReturn(Mono.empty());
+        when(connectionMock.isAutoCommit()).thenReturn(true);
 
         AtomicInteger counter = new AtomicInteger();
 
@@ -720,6 +722,7 @@ final class ConnectionPoolUnitTests {
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         Connection connectionMock = mock(Connection.class);
         when(connectionMock.validate(any())).thenReturn(Mono.empty());
+        when(connectionMock.isAutoCommit()).thenReturn(true);
 
         // acquire time should also consider the time to obtain an actual connection
         when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));

@@ -337,6 +337,63 @@ class PooledConnectionUnitTests {
     }
 
     /**
+     * What is to be tested: the release of a connection that was created in manual-commit mode and is still in it when
+     * it is closed, without a transaction the pool saw begin.
+     * <p>
+     * How will the test case be deemed successful and why: the release calls {@code rollbackTransaction()} and no
+     * {@code setAutoCommit(…)}, and the connection goes back into the pool. In manual-commit mode every statement of
+     * the borrower may have opened a transaction implicitly, and the pool cannot see it.
+     * <p>
+     * Why is it important to test this test case: a pool whose factory hands out connections in manual-commit mode
+     * would otherwise pass the uncommitted work and the locks of one borrower to the next one, who may commit them.
+     */
+    @Test
+    void shouldRollbackManualCommitBaselineOnRelease() {
+
+        when(connectionMock.isAutoCommit()).thenReturn(false);
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.empty());
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, false);
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        verify(connectionMock).rollbackTransaction();
+        verify(connectionMock, never()).setAutoCommit(anyBoolean());
+        verify(pooledRefMock).release();
+    }
+
+    /**
+     * What is to be tested: a release that rolls back a transaction the pool saw begin, while a call still running in
+     * the driver switches auto-commit off only after the release has started.
+     * <p>
+     * How will the test case be deemed successful and why: the release reads the mode again after the rollback, sees
+     * manual-commit mode, and calls {@code setAutoCommit(true)} after {@code rollbackTransaction()}. Had it decided on
+     * the restore from the mode it read before the rollback, it would return the connection in manual-commit mode.
+     * <p>
+     * Why is it important to test this test case: a begin that is cancelled while it runs may switch auto-commit off
+     * at any time; oracle-r2dbc does so in the first step of the begin.
+     */
+    @Test
+    void shouldReadAutoCommitAgainAfterRollback() {
+
+        List<String> calls = new ArrayList<>();
+        AtomicBoolean autoCommit = new AtomicBoolean(true);
+        when(connectionMock.isAutoCommit()).thenAnswer(it -> autoCommit.get());
+        // The begin still in flight switches auto-commit off before the driver runs the rollback queued behind it.
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.fromRunnable(() -> {
+            autoCommit.set(false);
+            calls.add("rollbackTransaction");
+        }));
+        when(connectionMock.setAutoCommit(true)).thenReturn(Mono.fromRunnable(() -> calls.add("setAutoCommit(true)")));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, true);
+        connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+        connection.close().as(StepVerifier::create).verifyComplete();
+
+        assertThat(calls).containsExactly("rollbackTransaction", "setAutoCommit(true)");
+        verify(pooledRefMock).release();
+    }
+
+    /**
      * What is to be tested: a release whose rollback fails.
      * <p>
      * How will the test case be deemed successful and why: {@code setAutoCommit(…)} is never called, the connection is

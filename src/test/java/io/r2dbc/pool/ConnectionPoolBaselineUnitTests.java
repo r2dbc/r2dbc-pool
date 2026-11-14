@@ -32,6 +32,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -52,12 +53,17 @@ class ConnectionPoolBaselineUnitTests {
     @BeforeEach
     void setUp() {
 
-        ConnectionFactory connectionFactory = new ConnectionFactory() {
+        this.pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactory(TransactionalStateConnection::new)).maxSize(1).build());
+    }
+
+    private ConnectionFactory connectionFactory(Supplier<TransactionalStateConnection> connections) {
+
+        return new ConnectionFactory() {
 
             @Override
             public Publisher<? extends Connection> create() {
                 return Mono.fromSupplier(() -> {
-                    TransactionalStateConnection connection = new TransactionalStateConnection();
+                    TransactionalStateConnection connection = connections.get();
                     ConnectionPoolBaselineUnitTests.this.created.add(connection);
                     return connection;
                 });
@@ -68,8 +74,6 @@ class ConnectionPoolBaselineUnitTests {
                 return () -> "TransactionalStateConnection";
             }
         };
-
-        this.pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactory).maxSize(1).build());
     }
 
     @AfterEach
@@ -202,6 +206,39 @@ class ConnectionPoolBaselineUnitTests {
             .then(Mono.from(c.commitTransaction())));
 
         assertThat(openAfterStatement).as("transaction open after a statement outside a transaction").isFalse();
+    }
+
+    /**
+     * What is to be tested: a pool whose connections are created in manual-commit mode, and a borrower that runs a DML
+     * statement and closes the connection without committing or rolling back.
+     * <p>
+     * How will the test case be deemed successful and why: the release rolled back after the statement, no
+     * transaction is open afterwards, and the connection is still in manual-commit mode. The release discarded the
+     * borrower's uncommitted work and kept the mode the connection was created with.
+     * <p>
+     * Why is it important to test this test case: in manual-commit mode the statement opens a transaction implicitly,
+     * which the pool never sees begin. Without the rollback the next borrower would work inside it and could commit it.
+     */
+    @Test
+    void implicitTransactionOnManualCommitConnectionShouldNotPoison() {
+
+        this.pool.dispose();
+        this.created.clear();
+        this.pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactory(() -> {
+            TransactionalStateConnection connection = new TransactionalStateConnection();
+            connection.forceState(false, false);
+            return connection;
+        })).maxSize(1).build());
+
+        TransactionalStateConnection connection = warmup();
+
+        borrow(c -> c.createStatement("INSERT INTO t VALUES (1)").execute());
+
+        assertThat(connection.calls()).as("calls up to the end of the release")
+            .containsSubsequence("execute(INSERT INTO t VALUES (1))", "rollbackTransaction");
+        assertThat(connection.calls()).doesNotContain("setAutoCommit(true)", "setAutoCommit(false)");
+        assertThat(connection.isTransactionOpen()).as("transaction open after the release").isFalse();
+        assertThat(connection.isAutoCommit()).as("auto-commit after the release").isFalse();
     }
 
     /**

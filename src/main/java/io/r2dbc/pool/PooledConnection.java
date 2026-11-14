@@ -101,31 +101,40 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     }
 
     /**
-     * Roll back a transaction that is left open and restore the auto-commit mode the connection was created with.
+     * Roll back a transaction that may be left open and restore the auto-commit mode the connection was created with.
      * <p>
-     * A rollback runs if a transaction was begun and not committed, or if the connection is in manual-commit mode
-     * although it was created in auto-commit mode: manual-commit mode may hide a transaction the pool did not see
-     * begin. The auto-commit mode is restored only after the rollback, because switching auto-commit on commits an
-     * open transaction. An error stops the release, and the connection is invalidated.
+     * A rollback runs if a transaction was begun and not committed, or if the connection is in manual-commit mode:
+     * manual-commit mode may hide a transaction the pool did not see begin, for example one that a statement of the
+     * borrower opened implicitly. The auto-commit mode is restored only after the rollback, because switching auto-commit
+     * on commits an open transaction, and it is read again after the rollback, because a call that still runs in the
+     * driver may have changed it in the meantime. An error stops the release, and the connection is invalidated.
      */
     private Mono<Void> resetTransactionState() {
         return Mono.defer(() -> {
 
             Boolean baseline = this.autoCommitBaseline;
-            boolean deviates = baseline != null && this.connection.isAutoCommit() != baseline;
 
-            // Deviating from an auto-commit baseline means manual-commit mode.
-            boolean rollback = this.inTransaction || (deviates && baseline);
-
-            Mono<Void> reset = rollback ? rollbackTransaction() : Mono.empty();
-
-            if (deviates) {
-                // The driver connection: this connection is already marked closed.
-                reset = reset.then(Mono.defer(() -> Mono.from(this.connection.setAutoCommit(baseline))));
+            if (baseline == null) {
+                // The mode is unknown: only a transaction the pool saw begin is rolled back.
+                return this.inTransaction ? rollbackTransaction() : Mono.empty();
             }
 
-            return reset;
+            if (this.inTransaction || !this.connection.isAutoCommit()) {
+                return rollbackTransaction().then(Mono.defer(() -> restoreAutoCommit(baseline)));
+            }
+
+            return restoreAutoCommit(baseline);
         });
+    }
+
+    private Mono<Void> restoreAutoCommit(boolean baseline) {
+
+        if (this.connection.isAutoCommit() == baseline) {
+            return Mono.empty();
+        }
+
+        // The driver connection: this connection is already marked closed.
+        return Mono.from(this.connection.setAutoCommit(baseline));
     }
 
     private static Mono<Void> handleCleanupError(Throwable throwable, PooledRef<Connection> ref) {
