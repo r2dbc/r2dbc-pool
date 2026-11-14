@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -207,60 +208,138 @@ class PooledConnectionUnitTests {
     }
 
     /**
-     * What is to be tested: that {@link PooledConnection#close()} rolls back after the subscriber of
+     * What is to be tested: that {@link PooledConnection#close()} invalidates the connection after the subscriber of
      * {@code beginTransaction()} cancelled before the begin completed.
      * <p>
-     * How will the test case be deemed successful and why: {@code rollbackTransaction()} of the driver connection is
-     * called and subscribed. A cancel says nothing about how far the begin got, and a driver may finish it anyway, so
-     * the flag has to stay set.
+     * How will the test case be deemed successful and why: the connection is invalidated, neither rolled back nor
+     * released. A driver may run the begin to its end after the cancel, and may decide on a rollback before the begin
+     * has taken effect: r2dbc-postgresql reads the transaction status when the rollback is subscribed, and that status
+     * changes only when the server answers the {@code BEGIN}. A rollback cannot be trusted, so the connection must not
+     * return to the pool.
      * <p>
      * Why is it important to test this test case: a timeout that cancels a begin in flight is how a connection is left
-     * with an open transaction in the first place (#233, #211). The behaviour holds today; the test keeps a later change,
-     * for example a reset of the flag on cancel, from losing it.
+     * with an open transaction in the first place (#233, #211).
      */
     @Test
-    void cancelledBeginShouldRollbackOnClose() {
+    void cancelledBeginShouldInvalidateOnClose() {
+        assertInvalidatedOnCloseAfterCancel(connection -> {
+            when(connectionMock.beginTransaction()).thenReturn(Mono.never());
+            connection.beginTransaction().as(StepVerifier::create).thenCancel().verify();
+        });
+    }
 
-        AtomicBoolean rollbackCalled = new AtomicBoolean();
+    /**
+     * What is to be tested: that {@link PooledConnection#close()} invalidates the connection after the subscriber of
+     * {@code beginTransaction(TransactionDefinition)} cancelled before the begin completed.
+     * <p>
+     * How will the test case be deemed successful and why: as for {@code beginTransaction()}, the connection is
+     * invalidated, neither rolled back nor released.
+     * <p>
+     * Why is it important to test this test case: Spring's {@code R2dbcTransactionManager} begins with a definition.
+     */
+    @Test
+    void cancelledExtendedBeginShouldInvalidateOnClose() {
+        assertInvalidatedOnCloseAfterCancel(connection -> {
+            when(connectionMock.beginTransaction(any())).thenReturn(Mono.never());
+            connection.beginTransaction(mock(TransactionDefinition.class)).as(StepVerifier::create).thenCancel().verify();
+        });
+    }
+
+    /**
+     * What is to be tested: that {@link PooledConnection#close()} invalidates the connection after the subscriber of
+     * {@code commitTransaction()} cancelled before the commit completed.
+     * <p>
+     * How will the test case be deemed successful and why: the connection is invalidated, neither rolled back nor
+     * released. The outcome of a cancelled commit is unknown, and a rollback queued behind it may run before or after
+     * it.
+     * <p>
+     * Why is it important to test this test case: a timeout around the commit is common. It complements
+     * {@code failedCommitShouldRollbackOnClose()} from #228.
+     */
+    @Test
+    void cancelledCommitShouldInvalidateOnClose() {
+        assertInvalidatedOnCloseAfterCancel(connection -> {
+            when(connectionMock.commitTransaction()).thenReturn(Mono.never());
+            connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+            connection.commitTransaction().as(StepVerifier::create).thenCancel().verify();
+        });
+    }
+
+    /**
+     * What is to be tested: that {@link PooledConnection#close()} invalidates the connection after the subscriber of
+     * {@code rollbackTransaction()} cancelled before the rollback completed.
+     * <p>
+     * How will the test case be deemed successful and why: the connection is invalidated, not released. Whether the
+     * transaction ended is unknown.
+     * <p>
+     * Why is it important to test this test case: the cleanup of a transaction manager can be cancelled as well.
+     */
+    @Test
+    void cancelledRollbackShouldInvalidateOnClose() {
+        assertInvalidatedOnCloseAfterCancel(connection -> {
+            when(connectionMock.rollbackTransaction()).thenReturn(Mono.never());
+            connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+            connection.rollbackTransaction().as(StepVerifier::create).thenCancel().verify();
+        });
+    }
+
+    /**
+     * What is to be tested: that {@link PooledConnection#close()} invalidates the connection after the subscriber of
+     * {@code setAutoCommit(boolean)} cancelled before the call completed.
+     * <p>
+     * How will the test case be deemed successful and why: the connection is invalidated, not released. Switching
+     * auto-commit off may begin a transaction, switching it on may commit one; whether either happened is unknown.
+     * <p>
+     * Why is it important to test this test case: r2dbc-postgresql sends {@code BEGIN} for {@code setAutoCommit(false)}.
+     */
+    @Test
+    void cancelledSetAutoCommitShouldInvalidateOnClose() {
+        assertInvalidatedOnCloseAfterCancel(connection -> {
+            when(connectionMock.setAutoCommit(false)).thenReturn(Mono.never());
+            connection.setAutoCommit(false).as(StepVerifier::create).thenCancel().verify();
+        });
+    }
+
+    /**
+     * What is to be tested: that {@link PooledConnection#validate(ValidationDepth)} reports the connection invalid after
+     * a cancelled begin, without asking the driver.
+     * <p>
+     * How will the test case be deemed successful and why: {@code validate(LOCAL)} emits {@code false}, and the driver's
+     * {@code validate} is not called. The local validation is the first step of the release, so this is how the
+     * release skips its cleanup.
+     * <p>
+     * Why is it important to test this test case: it pins the mechanism that the close tests above rely on.
+     */
+    @Test
+    void cancelledBeginShouldReportTheConnectionInvalid() {
+
         when(connectionMock.beginTransaction()).thenReturn(Mono.never());
-        when(connectionMock.rollbackTransaction()).thenReturn(Mono.<Void>empty().doOnSuccess(o -> rollbackCalled.set(true)));
 
         PooledConnection connection = new PooledConnection(pooledRefMock);
         connection.beginTransaction().as(StepVerifier::create).thenCancel().verify();
 
-        connection.close().as(StepVerifier::create).verifyComplete();
-
-        verify(connectionMock).rollbackTransaction();
-        assertThat(rollbackCalled).isTrue();
+        Mono.from(connection.validate(ValidationDepth.LOCAL)).as(StepVerifier::create).expectNext(false).verifyComplete();
+        verify(connectionMock, never()).validate(any());
     }
 
-    /**
-     * What is to be tested: that {@link PooledConnection#close()} rolls back after the subscriber of
-     * {@code commitTransaction()} cancelled before the commit completed.
-     * <p>
-     * How will the test case be deemed successful and why: {@code rollbackTransaction()} of the driver connection is
-     * called and subscribed. The outcome of a cancelled commit is unknown: a rollback after a commit that went through
-     * changes nothing, a skipped rollback after one that did not leaves the transaction open.
-     * <p>
-     * Why is it important to test this test case: a timeout around the commit is common, and before the commit cleared
-     * the flag only on success it returned such a connection with its transaction open. It complements
-     * {@code failedCommitShouldRollbackOnClose()} from #228.
-     */
-    @Test
-    void cancelledCommitShouldRollbackOnClose() {
+    private void assertInvalidatedOnCloseAfterCancel(Consumer<PooledConnection> cancelledCall) {
 
-        AtomicBoolean rollbackCalled = new AtomicBoolean();
-        when(connectionMock.commitTransaction()).thenReturn(Mono.never());
-        when(connectionMock.rollbackTransaction()).thenReturn(Mono.<Void>empty().doOnSuccess(o -> rollbackCalled.set(true)));
+        AtomicBoolean invalidated = new AtomicBoolean();
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.empty());
+        when(pooledRefMock.invalidate()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> invalidated.set(true)));
 
         PooledConnection connection = new PooledConnection(pooledRefMock);
-        connection.beginTransaction().as(StepVerifier::create).verifyComplete();
-        connection.commitTransaction().as(StepVerifier::create).thenCancel().verify();
+        cancelledCall.accept(connection);
+        reset(connectionMock);
+        setup(connectionMock);
+        AtomicBoolean released = new AtomicBoolean();
+        when(pooledRefMock.release()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> released.set(true)));
 
         connection.close().as(StepVerifier::create).verifyComplete();
 
-        verify(connectionMock).rollbackTransaction();
-        assertThat(rollbackCalled).isTrue();
+        assertThat(invalidated).isTrue();
+        assertThat(released).as("released into the pool").isFalse();
+        verify(connectionMock, never()).rollbackTransaction();
     }
 
     /**

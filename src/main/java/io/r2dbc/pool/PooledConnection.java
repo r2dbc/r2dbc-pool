@@ -53,6 +53,13 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
 
     private volatile boolean closed = false;
 
+    /**
+     * Set when a call that changes the transaction state was cancelled before it completed. A driver may still run such
+     * a call, and may decide whether to send a rollback before the call has taken effect, so the state of the
+     * connection is unknown and a rollback on release cannot be trusted.
+     */
+    private volatile boolean stateUnknown = false;
+
     private volatile boolean inTransaction = false;
 
     PooledConnection(PooledRef<Connection> ref) {
@@ -97,14 +104,14 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     public Mono<Void> beginTransaction() {
         assertNotClosed();
         // Kept set after a failed or cancelled begin, so that close() rolls back: the driver may have completed part of it.
-        return Mono.from(this.connection.beginTransaction()).doOnSubscribe(ignore -> this.inTransaction = true);
+        return Mono.from(this.connection.beginTransaction()).doOnSubscribe(ignore -> this.inTransaction = true).doOnCancel(this::markStateUnknown);
     }
 
     @Override
     public Mono<Void> beginTransaction(TransactionDefinition definition) {
         assertNotClosed();
         // Kept set after a failed or cancelled begin, see beginTransaction().
-        return Mono.from(this.connection.beginTransaction(definition)).doOnSubscribe(ignore -> this.inTransaction = true);
+        return Mono.from(this.connection.beginTransaction(definition)).doOnSubscribe(ignore -> this.inTransaction = true).doOnCancel(this::markStateUnknown);
     }
 
     @Override
@@ -116,7 +123,7 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     @Override
     public Mono<Void> commitTransaction() {
         assertNotClosed();
-        return Mono.from(this.connection.commitTransaction()).doOnSuccess(ignore -> this.inTransaction = false);
+        return Mono.from(this.connection.commitTransaction()).doOnSuccess(ignore -> this.inTransaction = false).doOnCancel(this::markStateUnknown);
     }
 
     @Override
@@ -164,7 +171,7 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     @Override
     public Mono<Void> rollbackTransaction() {
         // Cleared only after a successful rollback: after a failed one the transaction may still be open.
-        return Mono.from(this.connection.rollbackTransaction()).doOnSuccess(ignore -> this.inTransaction = false);
+        return Mono.from(this.connection.rollbackTransaction()).doOnSuccess(ignore -> this.inTransaction = false).doOnCancel(this::markStateUnknown);
     }
 
     @Override
@@ -175,7 +182,7 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     @Override
     public Mono<Void> setAutoCommit(boolean autoCommit) {
         assertNotClosed();
-        return Mono.from(this.connection.setAutoCommit(autoCommit));
+        return Mono.from(this.connection.setAutoCommit(autoCommit)).doOnCancel(this::markStateUnknown);
     }
 
     @Override
@@ -201,9 +208,24 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
         return this.connection;
     }
 
+    /**
+     * Validate the connection. After a call that changes the transaction state was cancelled before it completed, the
+     * connection reports itself invalid without asking the driver: its state is unknown. The local validation on
+     * {@link #close()} then invalidates the connection instead of returning it to the pool.
+     */
     @Override
     public Publisher<Boolean> validate(ValidationDepth validationDepth) {
+
+        if (this.stateUnknown) {
+            return Mono.just(false);
+        }
+
         return this.connection.validate(validationDepth);
+    }
+
+    private void markStateUnknown() {
+        logger.debug("A call that changes the transaction state was cancelled; the connection is invalidated on close");
+        this.stateUnknown = true;
     }
 
     private void assertNotClosed() {
