@@ -1339,6 +1339,7 @@ final class ConnectionPoolUnitTests {
         when(connectionFactoryMock.create()).thenAnswer(it -> Mono.fromCallable(() -> {
             ConnectionWithLifecycle connectionMock = mock(ConnectionWithLifecycle.class);
             when(connectionMock.validate(any())).thenReturn(Mono.just(true));
+            when(connectionMock.isAutoCommit()).thenReturn(true);
             when(connectionMock.postAllocate()).thenReturn(Mono.empty());
             when(connectionMock.preRelease()).thenReturn(Mono.empty());
             return connectionMock;
@@ -1492,10 +1493,12 @@ final class ConnectionPoolUnitTests {
 
         Connection stalled = mock(Connection.class);
         when(stalled.validate(any())).thenReturn(Mono.never());
+        when(stalled.isAutoCommit()).thenReturn(true);
         when(stalled.close()).thenReturn(Mono.never());
 
         Connection healthy = mock(Connection.class);
         when(healthy.validate(any())).thenReturn(Mono.just(true));
+        when(healthy.isAutoCommit()).thenReturn(true);
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         // The pool subscribes to the publisher of create() once per new connection.
@@ -1536,10 +1539,12 @@ final class ConnectionPoolUnitTests {
 
         Connection stalled = mock(Connection.class);
         when(stalled.validate(any())).thenReturn(Mono.never());
+        when(stalled.isAutoCommit()).thenReturn(true);
         when(stalled.close()).thenReturn(Mono.empty());
 
         Connection healthy = mock(Connection.class);
         when(healthy.validate(any())).thenReturn(Mono.just(true));
+        when(healthy.isAutoCommit()).thenReturn(true);
 
         ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
         // The pool subscribes to the publisher of create() once per new connection.
@@ -1567,6 +1572,7 @@ final class ConnectionPoolUnitTests {
 
         when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
         when(connectionMock.validate(any())).thenReturn(Mono.just(true));
+        when(connectionMock.isAutoCommit()).thenReturn(true);
         when(connectionMock.postAllocate()).thenReturn(Mono.empty());
         when(connectionMock.preRelease()).thenReturn(Mono.fromRunnable(lifecyclePreReleases::incrementAndGet));
         when(connectionMock.close()).thenReturn(Mono.empty());
