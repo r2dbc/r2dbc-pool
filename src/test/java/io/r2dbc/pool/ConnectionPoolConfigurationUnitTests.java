@@ -45,6 +45,7 @@ final class ConnectionPoolConfigurationUnitTests {
             .maxCreateConnectionTime(Duration.ofMinutes(1))
             .maxAcquireTime(Duration.ofMinutes(2))
             .maxValidationTime(Duration.ofMinutes(1))
+            .maxReleaseTime(Duration.ofSeconds(2))
             .initialSize(2)
             .maxSize(20)
             .name("bar")
@@ -59,6 +60,7 @@ final class ConnectionPoolConfigurationUnitTests {
             .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ofMinutes(1))
             .hasFieldOrPropertyWithValue("maxAcquireTime", Duration.ofMinutes(2))
             .hasFieldOrPropertyWithValue("maxValidationTime", Duration.ofMinutes(1))
+            .hasFieldOrPropertyWithValue("maxReleaseTime", Duration.ofSeconds(2))
             .hasFieldOrPropertyWithValue("initialSize", 2)
             .hasFieldOrPropertyWithValue("maxSize", 20)
             .hasFieldOrPropertyWithValue("name", "bar")
@@ -80,6 +82,7 @@ final class ConnectionPoolConfigurationUnitTests {
             .hasFieldOrPropertyWithValue("maxCreateConnectionTime", Duration.ofMillis(-1))
             .hasFieldOrPropertyWithValue("maxAcquireTime", Duration.ofMillis(-1))
             .hasFieldOrPropertyWithValue("maxValidationTime", Duration.ofMillis(-1))
+            .hasFieldOrPropertyWithValue("maxReleaseTime", Duration.ofMillis(-1))
             .hasFieldOrPropertyWithValue("initialSize", 10)
             .hasFieldOrPropertyWithValue("maxSize", 10)
             .hasFieldOrPropertyWithValue("registerJmx", false);

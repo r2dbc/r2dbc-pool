@@ -394,6 +394,114 @@ class PooledConnectionUnitTests {
     }
 
     /**
+     * What is to be tested: a release whose rollback never completes, with {@code maxReleaseTime} set.
+     * <p>
+     * How will the test case be deemed successful and why: after {@code maxReleaseTime} the connection is invalidated,
+     * it is not released into the pool, and {@code close()} completes. A connection whose rollback did not come back
+     * is in a state nobody knows; destroying it frees the slot.
+     * <p>
+     * Why is it important to test this test case: without a bound the slot stays acquired for good, and no eviction
+     * applies to an acquired connection (#234). The rollback runs exactly on the connections that are already in
+     * trouble.
+     */
+    @Test
+    void hangingRollbackShouldInvalidateAfterMaxReleaseTime() {
+
+        AtomicBoolean invalidated = new AtomicBoolean();
+        AtomicBoolean released = trackRelease();
+        when(pooledRefMock.invalidate()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> invalidated.set(true)));
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.never());
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, null, Duration.ofSeconds(2));
+        connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+
+        StepVerifier.withVirtualTime(connection::close).expectSubscription().thenAwait(Duration.ofSeconds(2)).expectComplete().verify(Duration.ofSeconds(5));
+
+        assertThat(invalidated).isTrue();
+        assertThat(released).as("released into the pool").isFalse();
+    }
+
+    /**
+     * What is to be tested: a release whose user {@code preRelease} function never completes, with
+     * {@code maxReleaseTime} set.
+     * <p>
+     * How will the test case be deemed successful and why: after {@code maxReleaseTime} the connection is invalidated
+     * and not released, and {@code close()} completes. The bound covers every step before the release, not only the
+     * pool's own.
+     * <p>
+     * Why is it important to test this test case: an application function that hangs costs a slot as surely as a
+     * rollback that hangs. Applications bound their own function today only because the pool does not.
+     */
+    @Test
+    void hangingPreReleaseShouldInvalidateAfterMaxReleaseTime() {
+
+        AtomicBoolean invalidated = new AtomicBoolean();
+        AtomicBoolean released = trackRelease();
+        when(pooledRefMock.invalidate()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> invalidated.set(true)));
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, c -> Mono.never(), null, Duration.ofSeconds(2));
+
+        StepVerifier.withVirtualTime(connection::close).expectSubscription().thenAwait(Duration.ofSeconds(2)).expectComplete().verify(Duration.ofSeconds(5));
+
+        assertThat(invalidated).isTrue();
+        assertThat(released).as("released into the pool").isFalse();
+    }
+
+    /**
+     * What is to be tested: a release that times out on a connection whose destroy never completes either.
+     * <p>
+     * How will the test case be deemed successful and why: {@code close()} completes after {@code maxReleaseTime},
+     * although the invalidation it started never completes. The pool starts the destroy and does not wait for it; the
+     * permit comes back when the destroy starts.
+     * <p>
+     * Why is it important to test this test case: a driver whose call hangs often does not complete {@code close()}
+     * either. A bounded release that then waits for an unbounded destroy bounds nothing for the caller, and with
+     * Spring's transaction manager the caller is the request (#234).
+     */
+    @Test
+    void releaseTimeoutShouldNotWaitForDestroy() {
+
+        AtomicBoolean invalidationStarted = new AtomicBoolean();
+        when(pooledRefMock.invalidate()).thenReturn(Mono.<Void>never().doOnSubscribe(ignore -> invalidationStarted.set(true)));
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.never());
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, null, Duration.ofSeconds(2));
+        connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+
+        StepVerifier.withVirtualTime(connection::close).expectSubscription().thenAwait(Duration.ofSeconds(2)).expectComplete().verify(Duration.ofSeconds(5));
+
+        assertThat(invalidationStarted).isTrue();
+    }
+
+    /**
+     * What is to be tested: a release whose rollback never completes, without {@code maxReleaseTime}.
+     * <p>
+     * How will the test case be deemed successful and why: {@code close()} has not completed after a day of virtual
+     * time, and the connection was neither invalidated nor released. Without the option, nothing bounds the release,
+     * as before.
+     * <p>
+     * Why is it important to test this test case: the option is off by default, so that existing configurations
+     * behave as they do today. A timeout that applies without being asked for would destroy connections that are only
+     * slow.
+     */
+    @Test
+    void releaseWithoutMaxReleaseTimeIsUnbounded() {
+
+        AtomicBoolean invalidated = new AtomicBoolean();
+        AtomicBoolean released = trackRelease();
+        when(pooledRefMock.invalidate()).thenReturn(Mono.<Void>empty().doOnSubscribe(ignore -> invalidated.set(true)));
+        when(connectionMock.rollbackTransaction()).thenReturn(Mono.never());
+
+        PooledConnection connection = new PooledConnection(pooledRefMock, null, null, ConnectionPoolConfiguration.NO_TIMEOUT);
+        connection.beginTransaction().as(StepVerifier::create).verifyComplete();
+
+        StepVerifier.withVirtualTime(connection::close).expectSubscription().expectNoEvent(Duration.ofDays(1)).thenCancel().verify();
+
+        assertThat(invalidated).isFalse();
+        assertThat(released).as("released into the pool").isFalse();
+    }
+
+    /**
      * What is to be tested: a release whose rollback fails.
      * <p>
      * How will the test case be deemed successful and why: {@code setAutoCommit(…)} is never called, the connection is

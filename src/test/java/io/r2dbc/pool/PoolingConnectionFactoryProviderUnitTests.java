@@ -187,6 +187,28 @@ final class PoolingConnectionFactoryProviderUnitTests {
             .hasFieldOrPropertyWithValue("maxValidationTime", Duration.ofMinutes(30));
     }
 
+    /**
+     * What is to be tested: the option {@code maxReleaseTime} in a connection URL.
+     * <p>
+     * How will the test case be deemed successful and why: the configuration built from
+     * {@code maxReleaseTime=PT2S} has a {@code maxReleaseTime} of two seconds. The option is parsed as a duration, like
+     * the other time limits.
+     * <p>
+     * Why is it important to test this test case: Spring Boot and other frameworks configure the pool through
+     * {@code ConnectionFactoryOptions}; an option the provider does not map would be ignored without notice.
+     */
+    @Test
+    void shouldApplyMaxReleaseTime() {
+
+        ConnectionFactoryOptions options =
+            ConnectionFactoryOptions.parse("r2dbc:pool:mock://host?maxReleaseTime=PT2S");
+
+        ConnectionPoolConfiguration configuration = PoolingConnectionFactoryProvider.buildConfiguration(options);
+
+        assertThat(configuration)
+            .hasFieldOrPropertyWithValue("maxReleaseTime", Duration.ofSeconds(2));
+    }
+
     @Test
     void shouldApplyLifecycleFunctions() {
 

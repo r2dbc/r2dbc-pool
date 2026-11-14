@@ -65,6 +65,7 @@ Mono<Object> resultMono = Mono.usingWhen(pooledConnectionFactory.create(),
 | `maxIdleTime`                | Maximum idle time of the connection in the pool. Negative values indicate no timeout. Defaults to `30` minutes.<br />This value is used as an interval for background eviction of idle connections unless configuring `backgroundEvictionInterval`.
 | `maxAcquireTime`             | Maximum time to acquire connection from pool. Negative values indicate no timeout. Defaults to no timeout.
 | `maxCreateConnectionTime`    | Maximum time to create a new connection. Negative values indicate no timeout. Defaults to no timeout.
+| `maxReleaseTime`             | Maximum time to prepare a connection for its release back into the pool. When it elapses, the connection is closed instead of released. Negative values indicate no timeout. Defaults to no timeout.
 | `maxValidationTime`          | Maximum time to validate connection from pool. Negative values indicate no timeout. Defaults to no timeout.
 | `poolName`                   | Name of the Connection Pool.
 | `postAllocate`               | Lifecycle function to prepare a connection after allocating it.

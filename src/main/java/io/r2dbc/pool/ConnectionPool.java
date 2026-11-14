@@ -200,7 +200,7 @@ public class ConnectionPool implements ConnectionFactory, Disposable, Closeable,
             prepare = prepare == null ? postAllocate : prepare.then(postAllocate);
         }
 
-        PooledConnection pooledConnection = new PooledConnection(ref, this.preRelease, this.autoCommitBaselines.get(connection));
+        PooledConnection pooledConnection = new PooledConnection(ref, this.preRelease, this.autoCommitBaselines.get(connection), configuration.getMaxReleaseTime());
         Mono<Connection> conn;
         if (prepare == null) {
             conn = getValidConnection(allocateValidation, pooledConnection);

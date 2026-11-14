@@ -1114,6 +1114,38 @@ final class ConnectionPoolUnitTests {
         verify(connectionMock).close();
     }
 
+    /**
+     * What is to be tested: that {@code maxReleaseTime} of the configuration reaches the connections of the pool.
+     * <p>
+     * How will the test case be deemed successful and why: with a {@code preRelease} function that never completes and
+     * {@code maxReleaseTime} of 100 ms, {@code close()} completes, the driver connection is closed and the pool has no
+     * connection left. The pool applied the bound and destroyed the connection.
+     * <p>
+     * Why is it important to test this test case: the unit tests of {@code PooledConnection} cover the bound itself;
+     * this one covers the wiring from the builder into each acquired connection.
+     */
+    @Test
+    void shouldTimeoutRelease() {
+
+        ConnectionFactory connectionFactoryMock = mock(ConnectionFactory.class);
+        Connection connectionMock = mock(Connection.class);
+
+        when(connectionFactoryMock.create()).thenAnswer(it -> Mono.just(connectionMock));
+        when(connectionMock.validate(any())).thenReturn(Mono.just(true));
+        when(connectionMock.close()).thenReturn(Mono.empty());
+
+        ConnectionPool pool = new ConnectionPool(ConnectionPoolConfiguration.builder(connectionFactoryMock).initialSize(0).maxSize(1)
+                .preRelease(connection -> Mono.never())
+                .maxReleaseTime(Duration.ofMillis(100))
+                .build());
+        PoolMetrics poolMetrics = pool.getMetrics().get();
+
+        Mono.usingWhen(pool.create(), connection -> Mono.empty(), Connection::close).as(StepVerifier::create).expectComplete().verify(Duration.ofSeconds(2));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> poolMetrics.allocatedSize() == 0);
+        verify(connectionMock).close();
+    }
+
     @Test
     void shouldInvokePostAllocate() {
 

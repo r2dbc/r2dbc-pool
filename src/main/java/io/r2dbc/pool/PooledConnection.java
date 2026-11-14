@@ -21,6 +21,7 @@ import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionMetadata;
 import io.r2dbc.spi.IsolationLevel;
 import io.r2dbc.spi.Lifecycle;
+import io.r2dbc.spi.R2dbcTimeoutException;
 import io.r2dbc.spi.Statement;
 import io.r2dbc.spi.TransactionDefinition;
 import io.r2dbc.spi.ValidationDepth;
@@ -68,16 +69,23 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
         this(ref, preRelease, null);
     }
 
+    PooledConnection(PooledRef<Connection> ref, @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, @Nullable Boolean autoCommitBaseline) {
+        this(ref, preRelease, autoCommitBaseline, ConnectionPoolConfiguration.NO_TIMEOUT);
+    }
+
     /**
      * @param autoCommitBaseline the auto-commit mode the connection had when it was created, restored on release;
      *                           {@code null} if unknown, in which case only an unfinished transaction is rolled back
+     * @param maxReleaseTime     the maximum time of the steps before the release into the pool; negative for no timeout
      */
-    PooledConnection(PooledRef<Connection> ref, @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, @Nullable Boolean autoCommitBaseline) {
+    PooledConnection(PooledRef<Connection> ref, @Nullable Function<? super Connection, ? extends Publisher<Void>> preRelease, @Nullable Boolean autoCommitBaseline,
+                     Duration maxReleaseTime) {
         this.ref = ref;
         this.connection = ref.poolable();
         this.autoCommitBaseline = autoCommitBaseline;
+        String timeoutMessage = String.format("Release timed out after %dms", maxReleaseTime.toMillis());
         this.release = Mono.defer(() -> {
-            return Validation.validate(this, ValidationDepth.LOCAL).then(Mono.defer(() -> {
+            Mono<Void> prepare = Validation.validate(this, ValidationDepth.LOCAL).then(Mono.defer(() -> {
 
                 Mono<Void> cleanup = null;
 
@@ -95,8 +103,14 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
                     cleanup = cleanup == null ? lifecyclePreRelease : cleanup.then(lifecyclePreRelease);
                 }
 
-                return cleanup.doOnSubscribe(ignore -> this.closed = true).then(this.ref.release());
-            })).onErrorResume(throwable -> handleCleanupError(throwable, ref)).doOnSubscribe(subscription -> logger.debug("Releasing connection"));
+                return cleanup.doOnSubscribe(ignore -> this.closed = true);
+            }));
+
+            if (!maxReleaseTime.isNegative()) {
+                prepare = prepare.timeout(maxReleaseTime, Mono.error(() -> new ReleaseTimeoutException(timeoutMessage)));
+            }
+
+            return prepare.then(this.ref.release()).onErrorResume(throwable -> handleCleanupError(throwable, ref)).doOnSubscribe(subscription -> logger.debug("Releasing connection"));
         });
     }
 
@@ -140,7 +154,25 @@ final class PooledConnection implements Connection, Wrapped<Connection> {
     private static Mono<Void> handleCleanupError(Throwable throwable, PooledRef<Connection> ref) {
 
         logger.warn("Release failed, the connection is invalidated", throwable);
+
+        if (throwable instanceof ReleaseTimeoutException) {
+            // Do not wait for the destroy: a driver whose call hangs may not complete close() either. The pool gives the
+            // permit back when the destroy starts.
+            ref.invalidate().subscribe(null, e -> logger.debug("Invalidation after a release timeout failed", e));
+            return Mono.empty();
+        }
+
         return ref.invalidate();
+    }
+
+    /**
+     * Signals that the steps before the release took longer than {@code maxReleaseTime}.
+     */
+    static final class ReleaseTimeoutException extends R2dbcTimeoutException {
+
+        ReleaseTimeoutException(String reason) {
+            super(reason);
+        }
     }
 
     @Override

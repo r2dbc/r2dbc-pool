@@ -105,6 +105,13 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
     public static final Option<Duration> MAX_LIFE_TIME = Option.valueOf("maxLifeTime");
 
     /**
+     * MaxReleaseTime {@link Option}.
+     *
+     * @since 1.1
+     */
+    public static final Option<Duration> MAX_RELEASE_TIME = Option.valueOf("maxReleaseTime");
+
+    /**
      * MaxValidationTime {@link Option}.
      *
      * @since 0.9.2
@@ -203,6 +210,7 @@ public class PoolingConnectionFactoryProvider implements ConnectionFactoryProvid
         mapper.from(MAX_CREATE_CONNECTION_TIME).as(OptionMapper::toDuration).to(builder::maxCreateConnectionTime);
         mapper.from(MAX_LIFE_TIME).as(OptionMapper::toDuration).to(builder::maxLifeTime);
         mapper.from(MAX_IDLE_TIME).as(OptionMapper::toDuration).to(builder::maxIdleTime);
+        mapper.from(MAX_RELEASE_TIME).as(OptionMapper::toDuration).to(builder::maxReleaseTime);
         mapper.from(MAX_VALIDATION_TIME).as(OptionMapper::toDuration).to(builder::maxValidationTime);
         mapper.fromExact(POOL_NAME).to(builder::name);
         mapper.fromExact(POST_ALLOCATE).to(builder::postAllocate);
